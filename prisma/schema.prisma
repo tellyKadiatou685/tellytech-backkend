@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Formation {
+  id            Int        @id @default(autoincrement())
+  titre         String
+  slug          String      @unique
+  description   String
+  programme     String?
+  duree         String?     // Ex: "6 mois"
+  tarifPres     Int?
+  tarifOnline   Int?
+  mensualite    Int?        // ✅ Prix par mois (ex: 50000 FCFA)
+  nombreMois    Int?        // ✅ Durée suggérée (ex: 6 mois)
+  imageUrl      String?
+  brochureUrl   String?
+  categorie     String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model Message {
+  id          Int       @id @default(autoincrement())
+  prenom      String
+  nom         String
+  email       String
+  telephone   String?
+  sujet       String
+  message     String
+  lu          Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
+
+model Inscription {
+  id                  Int        @id @default(autoincrement())
+  nom                 String
+  prenom              String
+  email               String     @unique  // ✅ Unique pour la connexion
+  telephone           String
+  formation           String
+  submissions         Submission[]
+  // ✅ FRAIS D'INSCRIPTION (payés UNE SEULE FOIS)
+  montantInscription  Int        @default(30000)  // ✅ FIXE : 30 000 FCFA
+  
+  // ✅ MENSUALITÉS (définies à la validation)
+  mensualite          Int?       // ✅ Prix par mois (ex: 50000)
+  nombreMois          Int?       // ✅ Durée en mois (ex: 6)
+  
+  status              Status     @default(PENDING)
+  code                String?    @unique  // ✅ Code de connexion
+  createdAt           DateTime   @default(now())
+  paiements           Paiement[] // ✅ Relation avec paiements
+}
+
+model Paiement {
+  id              Int             @id @default(autoincrement())
+  inscriptionId   Int
+  inscription     Inscription     @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
+  mois            Int             // 1, 2, 3, 4, 5, 6
+  montant         Int             // ✅ Montant du mois (récupéré depuis Inscription.mensualite)
+  status          StatusPaiement  @default(EN_ATTENTE)
+  dateValidation  DateTime?
+  recuUrl         String?         // Chemin vers le PDF
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model Evenement {
+  id          Int        @id @default(autoincrement())
+  titre       String
+  slug        String      @unique
+  description String
+  date        DateTime
+  imageUrl    String?
+  gallery     Galerie[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Galerie {
+  id          Int        @id @default(autoincrement())
+  url         String
+  evenementId Int
+  evenement   Evenement  @relation(fields: [evenementId], references: [id])
+}
+
+model Article {
+  id          Int        @id @default(autoincrement())
+  titre       String
+  slug        String      @unique
+  contenu     String
+  imageUrl    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Service {
+  id          Int       @id @default(autoincrement())
+  titre       String
+  description String
+  imageUrl    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  nom       String
+  email     String   @unique
+  password  String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  Module     Module[]
+   Course        Course[]
+   Lesson       Lesson[]
+}
+model Course {
+  id          Int      @id @default(autoincrement())
+  titre       String
+  description String?
+
+  formation   String   // ✅ même valeur que le select frontend
+
+  status      ContentStatus @default(PENDING)
+  createdById Int
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  modules     Module[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Module {
+  id        Int      @id @default(autoincrement())
+  titre     String
+  ordre     Int
+
+  courseId  Int
+  course    Course   @relation(fields: [courseId], references: [id])
+
+  status      ContentStatus @default(PENDING)
+  createdById Int
+  createdBy   User     @relation(fields: [createdById], references: [id])
+
+  lessons   Lesson[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Lesson {
+  id          Int      @id @default(autoincrement())
+  titre       String
+  ordre       Int
+
+  description String   // TEXTE À LIRE
+  videoUrl    String?
+  pdfUrl      String?
+  readMoreUrl String?
+
+  moduleId    Int
+  module      Module   @relation(fields: [moduleId], references: [id])
+
+  status      ContentStatus @default(PENDING)
+  createdById Int
+  createdBy   User       @relation(fields: [createdById], references: [id])
+
+  assignment  Assignment?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Assignment {
+  id          Int     @id @default(autoincrement())
+  lessonId    Int     @unique
+  lesson      Lesson  @relation(fields: [lessonId], references: [id])
+
+  instruction String  // ex : "Déposer lien GitHub"
+
+  submissions Submission[]
+  createdAt   DateTime @default(now())
+}
+model Submission {
+  id            Int     @id @default(autoincrement())
+  assignmentId  Int
+  assignment    Assignment @relation(fields: [assignmentId], references: [id])
+
+  inscriptionId Int
+  inscription   Inscription @relation(fields: [inscriptionId], references: [id])
+
+  link          String
+  status        SubmissionStatus @default(PENDING)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+enum ContentStatus {
+  DRAFT       // Création
+  PENDING     // En attente validation admin
+  PUBLISHED   // Visible étudiants
+  ARCHIVED
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+
+enum Status {
+  PENDING
+  VALIDATED
+}
+
+enum StatusPaiement {
+  EN_ATTENTE
+  VALIDE
+  REJETE
+}
+
+enum Role {
+  ADMIN
+  USER
+  COACH
+}
