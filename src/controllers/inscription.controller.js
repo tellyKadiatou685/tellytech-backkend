@@ -1,6 +1,6 @@
 import prisma from '../config/database.js';
 import { envoyerEmailAdmin, envoyerEmailValidation } from '../services/email.service.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 // Fonction pour générer un code à 4 chiffres
 function genererCode() {

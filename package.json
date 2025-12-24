@@ -7,8 +7,9 @@
     "dev": "nodemon server.js",
     "creat": "node scripts/createAdmin.js",
     "m": "node scripts/migrate-users.js",
-    "build": "npm install",
+    "build": "prisma generate",
     "start": "node server.js",
+    "vercel-build": "prisma generate",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
@@ -19,10 +20,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "TellyTech API - Formation Management System",
   "dependencies": {
     "@prisma/client": "^6.19.0",
     "@types/pdfkit": "^0.17.4",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
@@ -37,5 +39,8 @@
   "devDependencies": {
     "nodemon": "^3.1.11",
     "prisma": "^6.19.0"
+  },
+  "engines": {
+    "node": ">=18.x"
   }
 }
