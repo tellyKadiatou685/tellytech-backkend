@@ -1,75 +1,110 @@
 import prisma from '../config/database.js';
-import cloudinary from '../config/cloudinary.js';
+import { uploadToCloudinary, deleteFromCloudinary, extractPublicId } from '../utils/cloudinary.js';
 import slugify from 'slugify';
 
-class FormationService {
-  async createFormation(data, files) {
+const formationService = {
+  // Créer une formation
+  createFormation: async (data, files) => {
     try {
+      const { titre, description, categorie, duree, prix, prerequis, objectifs, contenu } = data;
+
+      // Validation
+      if (!titre || !description || !categorie || !duree || !prix) {
+        throw new Error('Tous les champs obligatoires doivent être remplis');
+      }
+
+      // Upload des fichiers vers Cloudinary
       let imageUrl = null;
       let brochureUrl = null;
 
-      // Upload image to Cloudinary
-      if (files?.image) {
-        const imageResult = await cloudinary.uploader.upload(files.image[0].path, {
-          folder: 'formations/images',
-          resource_type: 'image'
-        });
-        imageUrl = imageResult.secure_url;
+      // Upload image si présente
+      if (files?.image?.[0]) {
+        console.log('📤 Upload image vers Cloudinary...');
+        imageUrl = await uploadToCloudinary(
+          files.image[0].buffer,
+          'tellytech/formations/images',
+          'image'
+        );
+        console.log('✅ Image uploadée:', imageUrl);
       }
 
-      // Upload brochure to Cloudinary
-      if (files?.brochure) {
-        const brochureResult = await cloudinary.uploader.upload(files.brochure[0].path, {
-          folder: 'formations/brochures',
-          resource_type: 'auto'
-        });
-        brochureUrl = brochureResult.secure_url;
+      // Upload brochure si présente
+      if (files?.brochure?.[0]) {
+        console.log('📤 Upload brochure vers Cloudinary...');
+        brochureUrl = await uploadToCloudinary(
+          files.brochure[0].buffer,
+          'tellytech/formations/brochures',
+          'raw'
+        );
+        console.log('✅ Brochure uploadée:', brochureUrl);
       }
 
-      const slug = slugify(data.titre, { lower: true, strict: true });
+      // Générer le slug
+      const slug = slugify(titre, { lower: true, strict: true });
 
+      // Créer la formation
       const formation = await prisma.formation.create({
         data: {
-          titre: data.titre,
+          titre,
           slug,
-          description: data.description,
-          programme: data.programme,
-          duree: data.duree,
-          tarifPres: data.tarifPres ? parseInt(data.tarifPres) : null,
-          tarifOnline: data.tarifOnline ? parseInt(data.tarifOnline) : null,
-          imageUrl,
-          brochureUrl,
-          categorie: data.categorie
-        }
+          description,
+          categorie,
+          duree: parseInt(duree),
+          prix: parseFloat(prix),
+          prerequis: prerequis || null,
+          objectifs: objectifs || null,
+          contenu: contenu || null,
+          image: imageUrl,
+          brochure: brochureUrl,
+        },
       });
 
       return formation;
     } catch (error) {
-      throw new Error(`Erreur lors de la création de la formation: ${error.message}`);
+      console.error('❌ Erreur création formation:', error);
+      throw error;
     }
-  }
+  },
 
-  async getAllFormations() {
+  // Récupérer toutes les formations
+  getAllFormations: async () => {
     try {
-      return await prisma.formation.findMany({
+      const formations = await prisma.formation.findMany({
+        orderBy: { createdAt: 'desc' },
         include: {
-          inscriptions: true
-        },
-        orderBy: {
-          createdAt: 'desc'
+          _count: {
+            select: { inscriptions: true }
+          }
         }
       });
+      return formations;
     } catch (error) {
-      throw new Error(`Erreur lors de la récupération des formations: ${error.message}`);
+      console.error('❌ Erreur récupération formations:', error);
+      throw error;
     }
-  }
+  },
 
-  async getFormationById(id) {
+  // Récupérer une formation par ID
+  getFormationById: async (id) => {
     try {
       const formation = await prisma.formation.findUnique({
-        where: { id: parseInt(id) },
+        where: { id },
         include: {
-          inscriptions: true
+          inscriptions: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  nom: true,
+                  prenom: true,
+                  email: true
+                }
+              }
+            }
+          },
+          _count: {
+            select: { inscriptions: true }
+          }
         }
       });
 
@@ -79,16 +114,20 @@ class FormationService {
 
       return formation;
     } catch (error) {
-      throw new Error(`Erreur lors de la récupération de la formation: ${error.message}`);
+      console.error('❌ Erreur récupération formation:', error);
+      throw error;
     }
-  }
+  },
 
-  async getFormationBySlug(slug) {
+  // Récupérer une formation par slug
+  getFormationBySlug: async (slug) => {
     try {
       const formation = await prisma.formation.findUnique({
         where: { slug },
         include: {
-          inscriptions: true
+          _count: {
+            select: { inscriptions: true }
+          }
         }
       });
 
@@ -98,123 +137,232 @@ class FormationService {
 
       return formation;
     } catch (error) {
-      throw new Error(`Erreur lors de la récupération de la formation: ${error.message}`);
+      console.error('❌ Erreur récupération formation par slug:', error);
+      throw error;
     }
-  }
+  },
 
-  async updateFormation(id, data, files) {
+  // Mettre à jour une formation
+  updateFormation: async (id, data, files) => {
     try {
+      // Vérifier si la formation existe
       const existingFormation = await prisma.formation.findUnique({
-        where: { id: parseInt(id) }
+        where: { id }
       });
 
       if (!existingFormation) {
         throw new Error('Formation non trouvée');
       }
 
-      let imageUrl = existingFormation.imageUrl;
-      let brochureUrl = existingFormation.brochureUrl;
+      const updateData = { ...data };
 
-      // Update image if provided
-      if (files?.image) {
-        // Delete old image from Cloudinary
-        if (existingFormation.imageUrl) {
-          const publicId = existingFormation.imageUrl.split('/').slice(-2).join('/').split('.')[0];
-          await cloudinary.uploader.destroy(`formations/images/${publicId}`);
+      // Upload nouvelle image si présente
+      if (files?.image?.[0]) {
+        console.log('📤 Upload nouvelle image vers Cloudinary...');
+        
+        // Supprimer l'ancienne image si elle existe
+        if (existingFormation.image) {
+          const oldPublicId = extractPublicId(existingFormation.image);
+          if (oldPublicId) {
+            await deleteFromCloudinary(oldPublicId, 'image');
+          }
         }
 
-        const imageResult = await cloudinary.uploader.upload(files.image[0].path, {
-          folder: 'formations/images',
-          resource_type: 'image'
-        });
-        imageUrl = imageResult.secure_url;
+        updateData.image = await uploadToCloudinary(
+          files.image[0].buffer,
+          'tellytech/formations/images',
+          'image'
+        );
+        console.log('✅ Nouvelle image uploadée:', updateData.image);
       }
 
-      // Update brochure if provided
-      if (files?.brochure) {
-        // Delete old brochure from Cloudinary
-        if (existingFormation.brochureUrl) {
-          const publicId = existingFormation.brochureUrl.split('/').slice(-2).join('/').split('.')[0];
-          await cloudinary.uploader.destroy(`formations/brochures/${publicId}`);
+      // Upload nouvelle brochure si présente
+      if (files?.brochure?.[0]) {
+        console.log('📤 Upload nouvelle brochure vers Cloudinary...');
+        
+        // Supprimer l'ancienne brochure si elle existe
+        if (existingFormation.brochure) {
+          const oldPublicId = extractPublicId(existingFormation.brochure);
+          if (oldPublicId) {
+            await deleteFromCloudinary(oldPublicId, 'raw');
+          }
         }
 
-        const brochureResult = await cloudinary.uploader.upload(files.brochure[0].path, {
-          folder: 'formations/brochures',
-          resource_type: 'auto'
-        });
-        brochureUrl = brochureResult.secure_url;
+        updateData.brochure = await uploadToCloudinary(
+          files.brochure[0].buffer,
+          'tellytech/formations/brochures',
+          'raw'
+        );
+        console.log('✅ Nouvelle brochure uploadée:', updateData.brochure);
       }
 
-      const slug = data.titre ? slugify(data.titre, { lower: true, strict: true }) : existingFormation.slug;
+      // Mettre à jour le slug si le titre change
+      if (data.titre && data.titre !== existingFormation.titre) {
+        updateData.slug = slugify(data.titre, { lower: true, strict: true });
+      }
 
+      // Convertir les types si nécessaire
+      if (updateData.duree) updateData.duree = parseInt(updateData.duree);
+      if (updateData.prix) updateData.prix = parseFloat(updateData.prix);
+
+      // Mettre à jour la formation
       const formation = await prisma.formation.update({
-        where: { id: parseInt(id) },
-        data: {
-          titre: data.titre || existingFormation.titre,
-          slug,
-          description: data.description || existingFormation.description,
-          programme: data.programme || existingFormation.programme,
-          duree: data.duree || existingFormation.duree,
-          tarifPres: data.tarifPres ? parseInt(data.tarifPres) : existingFormation.tarifPres,
-          tarifOnline: data.tarifOnline ? parseInt(data.tarifOnline) : existingFormation.tarifOnline,
-          imageUrl,
-          brochureUrl,
-          categorie: data.categorie || existingFormation.categorie
-        }
+        where: { id },
+        data: updateData,
       });
 
       return formation;
     } catch (error) {
-      throw new Error(`Erreur lors de la mise à jour de la formation: ${error.message}`);
+      console.error('❌ Erreur mise à jour formation:', error);
+      throw error;
     }
-  }
+  },
 
-  async deleteFormation(id) {
+  // Supprimer une formation
+  deleteFormation: async (id) => {
     try {
+      // Vérifier si la formation existe
       const formation = await prisma.formation.findUnique({
-        where: { id: parseInt(id) }
+        where: { id },
+        include: {
+          _count: {
+            select: { inscriptions: true }
+          }
+        }
       });
 
       if (!formation) {
         throw new Error('Formation non trouvée');
       }
 
-      // Delete images from Cloudinary
-      if (formation.imageUrl) {
-        const publicId = formation.imageUrl.split('/').slice(-2).join('/').split('.')[0];
-        await cloudinary.uploader.destroy(`formations/images/${publicId}`);
+      // Vérifier s'il y a des inscriptions
+      if (formation._count.inscriptions > 0) {
+        throw new Error('Impossible de supprimer une formation avec des inscriptions actives');
       }
 
-      if (formation.brochureUrl) {
-        const publicId = formation.brochureUrl.split('/').slice(-2).join('/').split('.')[0];
-        await cloudinary.uploader.destroy(`formations/brochures/${publicId}`);
+      // Supprimer les fichiers de Cloudinary
+      if (formation.image) {
+        const imagePublicId = extractPublicId(formation.image);
+        if (imagePublicId) {
+          await deleteFromCloudinary(imagePublicId, 'image');
+        }
       }
 
+      if (formation.brochure) {
+        const brochurePublicId = extractPublicId(formation.brochure);
+        if (brochurePublicId) {
+          await deleteFromCloudinary(brochurePublicId, 'raw');
+        }
+      }
+
+      // Supprimer la formation
       await prisma.formation.delete({
-        where: { id: parseInt(id) }
+        where: { id }
       });
 
       return { message: 'Formation supprimée avec succès' };
     } catch (error) {
-      throw new Error(`Erreur lors de la suppression de la formation: ${error.message}`);
+      console.error('❌ Erreur suppression formation:', error);
+      throw error;
     }
-  }
+  },
 
-  async getFormationsByCategorie(categorie) {
+  // Récupérer les formations par catégorie
+  getFormationsByCategorie: async (categorie) => {
     try {
-      return await prisma.formation.findMany({
+      const formations = await prisma.formation.findMany({
         where: { categorie },
+        orderBy: { createdAt: 'desc' },
         include: {
-          inscriptions: true
-        },
-        orderBy: {
-          createdAt: 'desc'
+          _count: {
+            select: { inscriptions: true }
+          }
         }
       });
+      return formations;
     } catch (error) {
-      throw new Error(`Erreur lors de la récupération des formations par catégorie: ${error.message}`);
+      console.error('❌ Erreur récupération formations par catégorie:', error);
+      throw error;
+    }
+  },
+
+  // Rechercher des formations
+  searchFormations: async (query) => {
+    try {
+      const formations = await prisma.formation.findMany({
+        where: {
+          OR: [
+            { titre: { contains: query, mode: 'insensitive' } },
+            { description: { contains: query, mode: 'insensitive' } },
+            { categorie: { contains: query, mode: 'insensitive' } },
+          ]
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          _count: {
+            select: { inscriptions: true }
+          }
+        }
+      });
+      return formations;
+    } catch (error) {
+      console.error('❌ Erreur recherche formations:', error);
+      throw error;
+    }
+  },
+
+  // Récupérer les statistiques d'une formation
+  getFormationStats: async (id) => {
+    try {
+      const formation = await prisma.formation.findUnique({
+        where: { id },
+        include: {
+          inscriptions: {
+            include: {
+              paiement: true
+            }
+          }
+        }
+      });
+
+      if (!formation) {
+        throw new Error('Formation non trouvée');
+      }
+
+      // Calculer les statistiques
+      const totalInscriptions = formation.inscriptions.length;
+      const inscriptionsValidees = formation.inscriptions.filter(
+        i => i.statut === 'VALIDEE'
+      ).length;
+      const inscriptionsEnAttente = formation.inscriptions.filter(
+        i => i.statut === 'EN_ATTENTE'
+      ).length;
+      const inscriptionsAnnulees = formation.inscriptions.filter(
+        i => i.statut === 'ANNULEE'
+      ).length;
+
+      // Calculer le revenu total
+      const revenuTotal = formation.inscriptions
+        .filter(i => i.paiement && i.paiement.statut === 'COMPLETE')
+        .reduce((sum, i) => sum + (i.paiement.montant || 0), 0);
+
+      return {
+        formationId: formation.id,
+        titre: formation.titre,
+        statistiques: {
+          totalInscriptions,
+          inscriptionsValidees,
+          inscriptionsEnAttente,
+          inscriptionsAnnulees,
+          revenuTotal,
+          prixFormation: formation.prix
+        }
+      };
+    } catch (error) {
+      console.error('❌ Erreur récupération stats formation:', error);
+      throw error;
     }
   }
-}
+};
 
-export default new FormationService();
+export default formationService;
