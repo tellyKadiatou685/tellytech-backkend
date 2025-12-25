@@ -6,7 +6,9 @@ import formationRoutes from "./routes/formation.routes.js";
 import messageRoutes from "./routes/message.routes.js";
 import inscriptionRoutes from "./routes/inscription.routes.js";
 import authRoutes from './routes/auth.routes.js';
-import paiementRoutes from "./routes/paiement.routes.js"; // ✅ AJOUTER
+import paiementRoutes from "./routes/paiement.routes.js"; 
+
+
 dotenv.config();
 
 const app = express();
@@ -26,19 +28,21 @@ app.get("/", (req, res) => {
     endpoints: {
       formations: "/api/formations",
       inscriptions: "/api/inscriptions",
-      paiements: "/api/paiements",  // ✅ AJOUTER
+      paiements: "/api/paiements",  
       messages: "/api/messages",
       auth: "/api/auth"
     }
   });
 });
 
-// Routes API
+
 app.use("/api/formations", formationRoutes);
 app.use("/api/paiements", paiementRoutes);
 app.use("/api/messages",messageRoutes);
-app.use("/api/inscriptions", inscriptionRoutes);  // ✅ Correct (avec un S)
+app.use("/api/inscriptions", inscriptionRoutes);
 app.use('/api/auth', authRoutes);
+
+
 
 // Gestion des erreurs 404
 app.use((req, res) => {
