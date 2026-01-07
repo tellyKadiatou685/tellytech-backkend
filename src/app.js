@@ -7,8 +7,10 @@ import messageRoutes from "./routes/message.routes.js";
 import inscriptionRoutes from "./routes/inscription.routes.js";
 import authRoutes from './routes/auth.routes.js';
 import paiementRoutes from "./routes/paiement.routes.js"; 
+import submissionRoutes from "./routes/submission.routes.js"; 
+import progressRoutes from "./routes/progress.routes.js"; 
 
-
+import courseRoutes from './routes/course.routes.js';
 dotenv.config();
 
 const app = express();
@@ -41,6 +43,11 @@ app.use("/api/paiements", paiementRoutes);
 app.use("/api/messages",messageRoutes);
 app.use("/api/inscriptions", inscriptionRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/submissions', submissionRoutes);
+app.use('/api/courses', courseRoutes);
+app.use('/api/progress', progressRoutes);
+
+
 
 
 
@@ -52,6 +59,9 @@ app.use((req, res) => {
     path: req.originalUrl
   });
 });
+
+
+
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {

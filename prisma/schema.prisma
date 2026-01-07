@@ -7,17 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ✅ GARDER ces models (données de la plateforme)
 model Formation {
   id            Int        @id @default(autoincrement())
   titre         String
   slug          String      @unique
   description   String
   programme     String?
-  duree         String?     // Ex: "6 mois"
+  duree         String?
   tarifPres     Int?
   tarifOnline   Int?
-  mensualite    Int?        // ✅ Prix par mois (ex: 50000 FCFA)
-  nombreMois    Int?        // ✅ Durée suggérée (ex: 6 mois)
+  mensualite    Int?
+  nombreMois    Int?
   imageUrl      String?
   brochureUrl   String?
   categorie     String
@@ -41,32 +42,35 @@ model Inscription {
   id                  Int        @id @default(autoincrement())
   nom                 String
   prenom              String
-  email               String     @unique  // ✅ Unique pour la connexion
+  email               String     @unique
   telephone           String
   formation           String
   submissions         Submission[]
-  // ✅ FRAIS D'INSCRIPTION (payés UNE SEULE FOIS)
-  montantInscription  Int        @default(30000)  // ✅ FIXE : 30 000 FCFA
-  
-  // ✅ MENSUALITÉS (définies à la validation)
-  mensualite          Int?       // ✅ Prix par mois (ex: 50000)
-  nombreMois          Int?       // ✅ Durée en mois (ex: 6)
-  
+
+  montantInscription  Int        @default(30000)
+  mensualite          Int?
+  nombreMois          Int?
+
+  cohorte             Int?
+  estActif            Boolean    @default(true)
+  dateFinFormation    DateTime?
+
   status              Status     @default(PENDING)
-  code                String?    @unique  // ✅ Code de connexion
+  code                String?    @unique
   createdAt           DateTime   @default(now())
-  paiements           Paiement[] // ✅ Relation avec paiements
+  updatedAt           DateTime   @updatedAt
+  paiements           Paiement[]
 }
 
 model Paiement {
   id              Int             @id @default(autoincrement())
   inscriptionId   Int
   inscription     Inscription     @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
-  mois            Int             // 1, 2, 3, 4, 5, 6
-  montant         Int             // ✅ Montant du mois (récupéré depuis Inscription.mensualite)
+  mois            Int
+  montant         Int
   status          StatusPaiement  @default(EN_ATTENTE)
   dateValidation  DateTime?
-  recuUrl         String?         // Chemin vers le PDF
+  recuUrl         String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -115,95 +119,49 @@ model User {
   email     String   @unique
   password  String
   role      Role     @default(USER)
+  formation String?
+  cohorte   Int?
   createdAt DateTime @default(now())
-  Module     Module[]
-   Course        Course[]
-   Lesson       Lesson[]
-}
-model Course {
-  id          Int      @id @default(autoincrement())
-  titre       String
-  description String?
-
-  formation   String   // ✅ même valeur que le select frontend
-
-  status      ContentStatus @default(PENDING)
-  createdById Int
-  createdBy   User     @relation(fields: [createdById], references: [id])
-
-  modules     Module[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 }
 
-model Module {
-  id        Int      @id @default(autoincrement())
-  titre     String
-  ordre     Int
-
-  courseId  Int
-  course    Course   @relation(fields: [courseId], references: [id])
-
-  status      ContentStatus @default(PENDING)
-  createdById Int
-  createdBy   User     @relation(fields: [createdById], references: [id])
-
-  lessons   Lesson[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Lesson {
-  id          Int      @id @default(autoincrement())
-  titre       String
-  ordre       Int
-
-  description String   // TEXTE À LIRE
-  videoUrl    String?
-  pdfUrl      String?
-  readMoreUrl String?
-
-  moduleId    Int
-  module      Module   @relation(fields: [moduleId], references: [id])
-
-  status      ContentStatus @default(PENDING)
-  createdById Int
-  createdBy   User       @relation(fields: [createdById], references: [id])
-
-  assignment  Assignment?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
+// 🆕 MODIFIÉ : Assignment avec partId
 model Assignment {
-  id          Int     @id @default(autoincrement())
-  lessonId    Int     @unique
-  lesson      Lesson  @relation(fields: [lessonId], references: [id])
-
-  instruction String  // ex : "Déposer lien GitHub"
-
+  id          Int          @id @default(autoincrement())
+  partId      String       // 🆕 "part-1-1-1" (ID de la partie depuis JSON)
+  lessonId    String       // ✅ "lesson-1-1" (pour référence)
+  moduleId    String       // ✅ "module-1" (pour référence)
+  formation   String       // ✅ "dev-web"
+  instruction String       // Titre de la partie
   submissions Submission[]
-  createdAt   DateTime @default(now())
+  createdAt   DateTime     @default(now())
+
+  @@unique([partId, formation]) // 🆕 Une partie par formation
+  @@index([lessonId, moduleId])
 }
+
+// ✅ Submission : TD soumis par l'étudiant (INCHANGÉ)
 model Submission {
-  id            Int     @id @default(autoincrement())
+  id            Int              @id @default(autoincrement())
   assignmentId  Int
-  assignment    Assignment @relation(fields: [assignmentId], references: [id])
-
+  assignment    Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   inscriptionId Int
-  inscription   Inscription @relation(fields: [inscriptionId], references: [id])
-
+  inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
   link          String
   status        SubmissionStatus @default(PENDING)
-
+  feedback      String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@unique([inscriptionId, assignmentId]) // 🆕 Un étudiant = une soumission par assignment (donc par partie)
+  @@index([inscriptionId])
+  @@index([assignmentId])
+  @@index([status])
 }
 
 enum ContentStatus {
-  DRAFT       // Création
-  PENDING     // En attente validation admin
-  PUBLISHED   // Visible étudiants
+  DRAFT
+  PENDING
+  PUBLISHED
   ARCHIVED
 }
 
@@ -212,7 +170,6 @@ enum SubmissionStatus {
   APPROVED
   REJECTED
 }
-
 
 enum Status {
   PENDING
@@ -230,3 +187,7 @@ enum Role {
   USER
   COACH
 }
+
+// 📝 APRÈS AVOIR MODIFIÉ CE FICHIER :
+// 1. npx prisma migrate dev --name add_part_id_to_assignments
+// 2. npx prisma generate

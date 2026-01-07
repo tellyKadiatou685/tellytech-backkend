@@ -12,7 +12,6 @@ import {
 // 📌 PARTIE ÉTUDIANT 
 // ======================================== 
 
-// 📊 Dashboard étudiant : voir ses paiements AVEC MONTANTS
 export const getDashboardEtudiant = async (req, res) => {
   try {
     const { email } = req.params;
@@ -33,17 +32,14 @@ export const getDashboardEtudiant = async (req, res) => {
       });
     }
 
-    // ✅ CALCULS DES MONTANTS
-    const montantTotal = inscription.mensualite * inscription.nombreMois; // Ex: 50000 × 6 = 300000 FCFA
+    const montantTotal = inscription.mensualite * inscription.nombreMois;
     
-    // Somme des paiements validés
     const montantPaye = inscription.paiements
       .filter(p => p.status === 'VALIDE')
       .reduce((sum, p) => sum + p.montant, 0);
     
     const montantRestant = montantTotal - montantPaye;
 
-    // Stats par statut
     const totalPaiements = inscription.paiements.length;
     const paiementsValides = inscription.paiements.filter(p => p.status === 'VALIDE').length;
     const paiementsEnAttente = inscription.paiements.filter(p => p.status === 'EN_ATTENTE').length;
@@ -69,19 +65,21 @@ export const getDashboardEtudiant = async (req, res) => {
         email: inscription.email,
         telephone: inscription.telephone,
         formation: inscription.formation,
+        cohorte: inscription.cohorte,
         nombreMois: inscription.nombreMois,
-        mensualite: inscription.mensualite, // ✅ Ajouté
-        montantInscription: inscription.montantInscription || 0 // ✅ Ajouté pour affichage
+        mensualite: inscription.mensualite,
+        montantInscription: inscription.montantInscription || 0,
+        estActif: inscription.estActif,
+        dateFinFormation: inscription.dateFinFormation
       },
       statistiques: {
         totalMois: inscription.nombreMois,
         paiementsValides,
         paiementsEnAttente,
         paiementsNonPayes,
-        // ✅ NOUVEAUX CHAMPS MONTANTS
-        montantTotal,        // Ex: 300 000 FCFA
-        montantPaye,         // Ex: 150 000 FCFA
-        montantRestant       // Ex: 150 000 FCFA
+        montantTotal,
+        montantPaye,
+        montantRestant
       },
       paiements: paiementsFormates
     });
@@ -95,7 +93,6 @@ export const getDashboardEtudiant = async (req, res) => {
   }
 };
 
-// 💰 Demander un paiement pour un mois
 export const demanderPaiement = async (req, res) => {
   try {
     const { email } = req.params;
@@ -161,7 +158,6 @@ export const demanderPaiement = async (req, res) => {
   }
 };
 
-// 📥 Télécharger un reçu PDF
 export const telechargerRecu = async (req, res) => {
   try {
     const { paiementId } = req.params;
@@ -204,20 +200,10 @@ export const telechargerRecu = async (req, res) => {
         data: { recuUrl: nouveauRecuPath }
       });
 
-      return res.download(nouveauRecuPath, `Recu_Mois${paiement.mois}_TellyTech.pdf`, (err) => {
-        if (err) {
-          console.error('❌ Erreur téléchargement:', err);
-          res.status(500).json({ success: false, message: 'Erreur lors du téléchargement' });
-        }
-      });
+      return res.download(nouveauRecuPath, `Recu_Mois${paiement.mois}_TellyTech.pdf`);
     }
 
-    res.download(paiement.recuUrl, `Recu_Mois${paiement.mois}_TellyTech.pdf`, (err) => {
-      if (err) {
-        console.error('❌ Erreur téléchargement:', err);
-        res.status(500).json({ success: false, message: 'Erreur lors du téléchargement' });
-      }
-    });
+    res.download(paiement.recuUrl, `Recu_Mois${paiement.mois}_TellyTech.pdf`);
 
   } catch (error) {
     console.error('❌ Erreur téléchargement reçu:', error);
@@ -229,17 +215,21 @@ export const telechargerRecu = async (req, res) => {
 };
 
 // ======================================== 
-// 📌 PARTIE ADMIN 
+// 📌 PARTIE ADMIN (avec filtres cohorte)
 // ======================================== 
 
-// 📋 Récupérer tous les paiements en attente
 export const getPaiementsEnAttente = async (req, res) => {
   try {
-    const { formation } = req.query;
+    const { formation, cohorte } = req.query;
 
     const where = { status: 'EN_ATTENTE' };
-    if (formation) {
-      where.inscription = { formation };
+    const inscriptionWhere = {};
+    
+    if (formation) inscriptionWhere.formation = formation;
+    if (cohorte) inscriptionWhere.cohorte = parseInt(cohorte);
+    
+    if (Object.keys(inscriptionWhere).length > 0) {
+      where.inscription = inscriptionWhere;
     }
 
     const paiements = await prisma.paiement.findMany({
@@ -254,6 +244,7 @@ export const getPaiementsEnAttente = async (req, res) => {
       email: p.inscription.email,
       telephone: p.inscription.telephone,
       formation: p.inscription.formation,
+      cohorte: p.inscription.cohorte,
       mois: p.mois,
       montant: p.montant,
       dateDemande: p.createdAt
@@ -274,14 +265,18 @@ export const getPaiementsEnAttente = async (req, res) => {
   }
 };
 
-// 📋 Récupérer tous les paiements validés
 export const getPaiementsValides = async (req, res) => {
   try {
-    const { formation } = req.query;
+    const { formation, cohorte } = req.query;
 
     const where = { status: 'VALIDE' };
-    if (formation) {
-      where.inscription = { formation };
+    const inscriptionWhere = {};
+    
+    if (formation) inscriptionWhere.formation = formation;
+    if (cohorte) inscriptionWhere.cohorte = parseInt(cohorte);
+    
+    if (Object.keys(inscriptionWhere).length > 0) {
+      where.inscription = inscriptionWhere;
     }
 
     const paiements = await prisma.paiement.findMany({
@@ -295,6 +290,7 @@ export const getPaiementsValides = async (req, res) => {
       etudiant: `${p.inscription.prenom} ${p.inscription.nom}`,
       email: p.inscription.email,
       formation: p.inscription.formation,
+      cohorte: p.inscription.cohorte,
       mois: p.mois,
       montant: p.montant,
       dateValidation: p.dateValidation
@@ -315,15 +311,18 @@ export const getPaiementsValides = async (req, res) => {
   }
 };
 
-// 🆕 Récupérer les étudiants avec paiements non effectués
+// 🆕 Étudiants avec paiements non effectués (SEULEMENT LES ACTIFS)
 export const getEtudiantsPaiementsNonPayes = async (req, res) => {
   try {
-    const { formation } = req.query;
+    const { formation, cohorte } = req.query;
 
-    const where = { status: 'VALIDATED' };
-    if (formation) {
-      where.formation = formation;
-    }
+    const where = { 
+      status: 'VALIDATED',
+      estActif: true // ✅ SEULEMENT LES ACTIFS
+    };
+    
+    if (formation) where.formation = formation;
+    if (cohorte) where.cohorte = parseInt(cohorte);
 
     const inscriptions = await prisma.inscription.findMany({
       where,
@@ -354,6 +353,7 @@ export const getEtudiantsPaiementsNonPayes = async (req, res) => {
             email: inscription.email,
             telephone: inscription.telephone,
             formation: inscription.formation,
+            cohorte: inscription.cohorte,
             nombreMoisTotal: inscription.nombreMois,
             moisPayes,
             moisNonPayes,
@@ -380,15 +380,18 @@ export const getEtudiantsPaiementsNonPayes = async (req, res) => {
   }
 };
 
-// 🆕 Envoyer des rappels de paiement
+// 🆕 Rappels de paiement (SEULEMENT LES ACTIFS)
 export const envoyerRappelsPaiements = async (req, res) => {
   try {
-    const { formation } = req.query;
+    const { formation, cohorte } = req.query;
 
-    const where = { status: 'VALIDATED' };
-    if (formation) {
-      where.formation = formation;
-    }
+    const where = { 
+      status: 'VALIDATED',
+      estActif: true // ✅ SEULEMENT LES ACTIFS
+    };
+    
+    if (formation) where.formation = formation;
+    if (cohorte) where.cohorte = parseInt(cohorte);
 
     const inscriptions = await prisma.inscription.findMany({
       where,
@@ -421,7 +424,7 @@ export const envoyerRappelsPaiements = async (req, res) => {
             email: inscription.email,
             formation: inscription.formation,
             moisManquants,
-            montantMensuel: inscription.mensualite // ✅ Utiliser le montant réel
+            montantMensuel: inscription.mensualite
           });
 
           rappelsEnvoyes.push({
@@ -454,18 +457,19 @@ export const envoyerRappelsPaiements = async (req, res) => {
     });
   }
 };
-// À ajouter dans paiement.controller.js
 
-// 📊 Statistiques détaillées par mois et formation
+// 📊 Statistiques détaillées par mois (SEULEMENT LES ACTIFS)
 export const getStatistiquesDetailleesParMois = async (req, res) => {
   try {
-    const { formation, mois } = req.query;
+    const { formation, mois, cohorte } = req.query;
 
-    // Récupérer toutes les inscriptions validées
-    const whereInscription = { status: 'VALIDATED' };
-    if (formation) {
-      whereInscription.formation = formation;
-    }
+    const whereInscription = { 
+      status: 'VALIDATED',
+      estActif: true // ✅ SEULEMENT LES ACTIFS
+    };
+    
+    if (formation) whereInscription.formation = formation;
+    if (cohorte) whereInscription.cohorte = parseInt(cohorte);
 
     const inscriptions = await prisma.inscription.findMany({
       where: whereInscription,
@@ -476,7 +480,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
       }
     });
 
-    // Grouper par formation
     const statsParFormation = {};
 
     for (const inscription of inscriptions) {
@@ -491,11 +494,11 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
         };
       }
 
-      // Ajouter l'étudiant
       const etudiantInfo = {
         id: inscription.id,
         nom: `${inscription.prenom} ${inscription.nom}`,
         email: inscription.email,
+        cohorte: inscription.cohorte,
         nombreMois: inscription.nombreMois,
         mensualite: inscription.mensualite,
         paiementsValides: inscription.paiements.map(p => p.mois),
@@ -504,12 +507,10 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
       statsParFormation[formationNom].etudiants.push(etudiantInfo);
       statsParFormation[formationNom].totalEtudiants++;
 
-      // Calculer les revenus
       const revenusEtudiant = inscription.paiements.reduce((sum, p) => sum + p.montant, 0);
       statsParFormation[formationNom].revenus += revenusEtudiant;
     }
 
-    // Si un mois spécifique est demandé, calculer les stats pour ce mois
     if (mois) {
       const moisNum = parseInt(mois);
       
@@ -521,11 +522,9 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
         let etudiantsNonPaye = 0;
 
         for (const etudiant of formation.etudiants) {
-          // Vérifier si l'étudiant doit payer ce mois
           if (etudiant.nombreMois >= moisNum) {
             etudiantsDoiventPayer++;
             
-            // Vérifier si l'étudiant a payé ce mois
             if (etudiant.paiementsValides.includes(moisNum)) {
               etudiantsOntPaye++;
             } else {
@@ -543,7 +542,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
           : '0%';
       }
     } else {
-      // Stats globales (tous les mois)
       for (const formationNom in statsParFormation) {
         const formation = statsParFormation[formationNom];
         
@@ -564,14 +562,14 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
       }
     }
 
-    // Convertir en tableau
     const statsArray = Object.values(statsParFormation);
 
     res.json({
       success: true,
       stats: statsArray,
       filtreMois: mois ? parseInt(mois) : null,
-      filtreFormation: formation || null
+      filtreFormation: formation || null,
+      filtreCohorte: cohorte ? parseInt(cohorte) : null
     });
 
   } catch (error) {
@@ -583,7 +581,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
   }
 };
 
-// ✅ Valider un paiement
 export const validerPaiement = async (req, res) => {
   try {
     const { id } = req.params;
@@ -653,7 +650,6 @@ export const validerPaiement = async (req, res) => {
   }
 };
 
-// ❌ Rejeter un paiement
 export const rejeterPaiement = async (req, res) => {
   try {
     const { id } = req.params;
@@ -689,12 +685,20 @@ export const rejeterPaiement = async (req, res) => {
   }
 };
 
-// 📊 Statistiques globales
+// 📊 Statistiques globales (SEULEMENT LES ACTIFS)
 export const getStatistiquesPaiements = async (req, res) => {
   try {
-    const { formation } = req.query;
+    const { formation, cohorte } = req.query;
 
-    const where = formation ? { inscription: { formation } } : {};
+    const inscriptionWhere = { 
+      status: 'VALIDATED',
+      estActif: true // ✅ SEULEMENT LES ACTIFS
+    };
+    
+    if (formation) inscriptionWhere.formation = formation;
+    if (cohorte) inscriptionWhere.cohorte = parseInt(cohorte);
+
+    const where = { inscription: inscriptionWhere };
 
     const totalPaiements = await prisma.paiement.count({ where });
     const enAttente = await prisma.paiement.count({ 
@@ -712,13 +716,9 @@ export const getStatistiquesPaiements = async (req, res) => {
       _sum: { montant: true }
     });
 
-    const whereInscription = formation 
-      ? { formation, status: 'VALIDATED' }
-      : { status: 'VALIDATED' };
-    
     const statsParFormation = await prisma.inscription.groupBy({
       by: ['formation'],
-      where: whereInscription,
+      where: inscriptionWhere,
       _count: { id: true },
       _sum: { nombreMois: true }
     });
@@ -728,14 +728,20 @@ export const getStatistiquesPaiements = async (req, res) => {
         const paiementsFormation = await prisma.paiement.count({
           where: {
             status: 'VALIDE',
-            inscription: { formation: stat.formation }
+            inscription: { 
+              formation: stat.formation,
+              estActif: true // ✅ SEULEMENT LES ACTIFS
+            }
           }
         });
 
         const revenusFormation = await prisma.paiement.aggregate({
           where: {
             status: 'VALIDE',
-            inscription: { formation: stat.formation }
+            inscription: { 
+              formation: stat.formation,
+              estActif: true
+            }
           },
           _sum: { montant: true }
         });

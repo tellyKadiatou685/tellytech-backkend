@@ -1,0 +1,209 @@
+{
+  "formation": "dev-web",
+  "titre": "Développement Web Full Stack",
+  "description": "Formation complète pour devenir développeur web professionnel",
+  "duree": "6 mois",
+  "niveau": "Débutant à Intermédiaire",
+  
+  "modules": [
+    {
+      "id": "module-1",
+      "titre": "HTML & CSS",
+      "ordre": 1,
+      "description": "Maîtriser les fondamentaux du développement web",
+      "duree": "4 semaines",
+      "objectifs": [
+        "Créer des pages web structurées avec HTML5",
+        "Styliser des interfaces modernes avec CSS3",
+        "Comprendre le responsive design",
+        "Utiliser Flexbox et Grid"
+      ],
+      "lessons": [
+        {
+          "id": "lesson-1-1",
+          "titre": "HTML & CSS Fondamentaux",
+          "ordre": 1,
+          "description": "Apprendre les bases du HTML et CSS : balises, styles, box model",
+          "duree": "8h",
+          "videoUrl": "/videos/html-css-fondamentaux.mp4",
+          "requiresPreviousValidation": false,
+          "parts": [
+            {
+              "id": "part-1-1-1",
+              "titre": "Introduction au HTML",
+              "contenu": "Découvrez comment créer un fichier HTML avec l'extension .html. Apprenez les balises simples : paragraphes (<p>), titres (<h1> à <h6>), sauts de ligne (<br>), liens (<a href=''>), listes ordonnées (<ol>) et non-ordonnées (<ul> avec <li>).",
+              "ordre": 1,
+              "codeExample": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Ma première page HTML</title>\n</head>\n<body>\n  <h1>Mon premier titre</h1>\n  <h2>Sous-titre</h2>\n  <p>Voici un paragraphe de texte.</p>\n  <p>Un autre paragraphe avec <br> un saut de ligne.</p>\n  \n  <a href=\"https://example.com\">Cliquez ici</a>\n  \n  <h3>Liste non-ordonnée :</h3>\n  <ul>\n    <li>Item 1</li>\n    <li>Item 2</li>\n    <li>Item 3</li>\n  </ul>\n  \n  <h3>Liste ordonnée :</h3>\n  <ol>\n    <li>Premier</li>\n    <li>Deuxième</li>\n    <li>Troisième</li>\n  </ol>\n</body>\n</html>",
+              "exercise": {
+                "consigne": "Créez un fichier HTML nommé 'monCV.html' contenant : votre nom en H1, une courte bio en paragraphe, un lien vers votre email, et une liste de vos compétences."
+              }
+            },
+            {
+              "id": "part-1-1-2",
+              "titre": "Introduction au CSS",
+              "contenu": "Apprenez les trois méthodes pour utiliser le CSS : inline (dans la balise), internal (dans <style>) et external (fichier .css séparé). INSISTEZ sur l'utilisation du CSS externe pour séparer le contenu du style. Découvrez les propriétés de base : background-color, color, border (avec ses valeurs : border-width, border-style, border-color).",
+              "ordre": 2,
+              "codeExample": "<!-- Méthode 1 : Inline (À ÉVITER) -->\n<p style=\"color: red;\">Texte rouge</p>\n\n<!-- Méthode 2 : Internal -->\n<head>\n  <style>\n    p { color: blue; }\n  </style>\n</head>\n\n<!-- Méthode 3 : External (RECOMMANDÉ) -->\n<!-- Dans index.html -->\n<head>\n  <link rel=\"stylesheet\" href=\"styles.css\">\n</head>\n\n/* Dans styles.css */\nbody {\n  background-color: #f0f0f0;\n}\n\nh1 {\n  color: #2563eb;\n  background-color: #dbeafe;\n}\n\np {\n  color: #374151;\n  border: 2px solid #000;\n  border-width: 3px;\n  border-style: dashed;\n  border-color: red;\n}",
+              "exercise": {
+                "consigne": "Créez un fichier 'styles.css' et liez-le à votre page HTML. Stylisez votre H1 avec une couleur de fond, vos paragraphes avec une couleur de texte, et ajoutez une bordure à votre liste."
+              }
+            },
+            {
+              "id": "part-1-1-3",
+              "titre": "Margin & Padding",
+              "contenu": "Comprendre la différence entre margin (espace EXTÉRIEUR autour de l'élément) et padding (espace INTÉRIEUR entre le contenu et la bordure). Le Box Model : Content → Padding → Border → Margin. Syntaxes : margin: 10px (tous les côtés), margin: 10px 20px (vertical horizontal), margin: 10px 20px 15px 25px (haut droite bas gauche).",
+              "ordre": 3,
+              "codeExample": "/* Margin : espace extérieur */\np {\n  margin: 20px; /* 20px de tous les côtés */\n  margin-top: 30px;\n  margin-right: 15px;\n  margin-bottom: 10px;\n  margin-left: 15px;\n}\n\n/* Padding : espace intérieur */\n.boite {\n  padding: 15px; /* 15px de tous les côtés */\n  padding: 10px 20px; /* 10px vertical, 20px horizontal */\n  border: 2px solid #000;\n  background-color: #ddd;\n}\n\n/* Box Model complet */\n.exemple {\n  width: 200px;\n  padding: 20px;    /* Intérieur */\n  border: 5px solid black;\n  margin: 30px;     /* Extérieur */\n}",
+              "exercise": {
+                "consigne": "Créez 3 div avec la classe 'boite'. Appliquez un padding de 20px, une bordure de 3px solid, et un margin de 15px. Observez la différence entre margin et padding."
+              }
+            },
+            {
+              "id": "part-1-1-4",
+              "titre": "Block vs Inline",
+              "contenu": "Les balises BLOCK occupent toute la largeur disponible et commencent sur une nouvelle ligne (ex: <div>, <p>, <h1>, <ul>). Les balises INLINE s'alignent horizontalement et prennent uniquement la largeur de leur contenu (ex: <span>, <a>, <strong>, <em>). On peut changer ce comportement avec display: block, inline, inline-block.",
+              "ordre": 4,
+              "codeExample": "/* Balises BLOCK par défaut */\ndiv, p, h1, ul, li {\n  /* Prennent toute la largeur */\n  /* Commencent sur nouvelle ligne */\n}\n\n/* Balises INLINE par défaut */\nspan, a, strong, em {\n  /* Prennent juste la largeur du contenu */\n  /* S'alignent horizontalement */\n}\n\n/* Transformer inline en block */\nspan {\n  display: block;\n  width: 200px;\n  margin: 10px;\n  padding: 10px;\n}\n\n/* Transformer block en inline */\ndiv {\n  display: inline;\n}\n\n/* Inline-block : le meilleur des deux */\n.boite {\n  display: inline-block;\n  width: 150px;\n  height: 150px;\n  margin: 10px;\n  padding: 20px;\n  background-color: #3b82f6;\n  color: white;\n}",
+              "exercise": {
+                "consigne": "Créez 5 <div> avec la classe 'boite'. Par défaut, ils sont en vertical (block). Utilisez 'display: inline-block' pour les aligner horizontalement. Ajoutez width, height, padding, margin et background-color."
+              }
+            },
+            {
+              "id": "part-1-1-5",
+              "titre": "Exercices Résumé - Les Boîtes",
+              "contenu": "Mettez en pratique tout ce que vous avez appris : margin, padding, border, et display inline-block. Cette partie contient 3 exercices pratiques avec vidéo de correction et PDF.",
+              "ordre": 5,
+              "exercise": {
+                "consigne": "EXERCICE 1 : Créez 3 boîtes carrées (200x200px) avec padding de 20px, margin de 15px, bordure de 3px solid, et alignez-les horizontalement avec inline-block.\n\nEXERCICE 2 : Créez une galerie de 6 images (ou divs colorées) alignées sur 3 colonnes en utilisant inline-block et margin.\n\nEXERCICE 3 : Créez une carte de profil (div) avec : une image en haut, un titre H3, un paragraphe de description. Utilisez padding, margin et centrez le tout."
+              }
+            }
+          ],
+          "assignment": {
+            "coursePdf": "/pdfs/html-css-fondamentaux-cours.pdf",
+            "tdPdf": "/pdfs/html-css-fondamentaux-exercices.pdf",
+            "instruction": "Projet pratique : Créez une page 'À propos' avec votre profil. Utilisez toutes les notions vues : HTML structuré, CSS externe, box model (margin/padding), balises block et inline, et créez des boîtes alignées pour vos compétences.",
+            "criteres": [
+              "Code HTML valide et bien structuré",
+              "CSS externe uniquement (pas de styles inline)",
+              "Utilisation correcte de margin et padding",
+              "Au moins 3 boîtes alignées avec inline-block",
+              "Balises sémantiques utilisées où possible"
+            ]
+          }
+        },
+        
+        {
+          "id": "lesson-1-2",
+          "titre": "Layouts Modernes",
+          "ordre": 2,
+          "description": "Maîtriser Flexbox et Grid pour créer des mises en page modernes",
+          "duree": "4h",
+          "videoUrl": "/videos/layouts-modernes.mp4",
+          "requiresPreviousValidation": true,
+          "parts": [
+            {
+              "id": "part-1-2-1",
+              "titre": "Flexbox",
+              "contenu": "Flexbox permet d'organiser facilement vos éléments en lignes ou colonnes. Propriétés du conteneur : display: flex, flex-direction (row, column), justify-content (alignment horizontal), align-items (alignment vertical), flex-wrap. Propriétés des enfants : flex-grow, flex-shrink, flex-basis.",
+              "ordre": 1,
+              "codeExample": "/* Container Flexbox */\n.container {\n  display: flex;\n  flex-direction: row; /* ou column */\n  justify-content: space-between; /* flex-start, center, flex-end, space-around */\n  align-items: center; /* flex-start, center, flex-end, stretch */\n  gap: 20px;\n  flex-wrap: wrap; /* pour passer à la ligne */\n}\n\n/* Exemple : Menu horizontal */\n.menu {\n  display: flex;\n  justify-content: space-around;\n  align-items: center;\n  background-color: #333;\n  padding: 15px;\n}\n\n.menu a {\n  color: white;\n  text-decoration: none;\n  padding: 10px 20px;\n}\n\n/* Exemple : Cards alignées */\n.cards {\n  display: flex;\n  gap: 20px;\n  flex-wrap: wrap;\n}\n\n.card {\n  flex: 1;\n  min-width: 250px;\n  padding: 20px;\n  border: 1px solid #ddd;\n}",
+              "exercise": {
+                "consigne": "Créez un menu de navigation horizontal avec 5 liens en utilisant Flexbox. Puis créez une section avec 4 cartes (divs) alignées horizontalement qui passent à la ligne automatiquement (flex-wrap)."
+              }
+            },
+            {
+              "id": "part-1-2-2",
+              "titre": "Grid",
+              "contenu": "CSS Grid permet de créer des layouts en 2 dimensions (lignes ET colonnes). Propriétés principales : display: grid, grid-template-columns, grid-template-rows, gap, grid-column, grid-row.",
+              "ordre": 2,
+              "codeExample": "/* Container Grid */\n.container {\n  display: grid;\n  grid-template-columns: 1fr 1fr 1fr; /* 3 colonnes égales */\n  grid-template-columns: 200px 1fr 200px; /* colonnes fixes et flexible */\n  grid-template-columns: repeat(3, 1fr); /* répéter 3 fois */\n  gap: 20px; /* espace entre les éléments */\n}\n\n/* Exemple : Layout 3 colonnes */\n.gallery {\n  display: grid;\n  grid-template-columns: repeat(3, 1fr);\n  gap: 15px;\n}\n\n.gallery img {\n  width: 100%;\n  height: auto;\n}\n\n/* Exemple : Layout complexe */\n.layout {\n  display: grid;\n  grid-template-columns: 250px 1fr;\n  grid-template-rows: auto 1fr auto;\n  gap: 20px;\n  height: 100vh;\n}\n\n.header {\n  grid-column: 1 / 3; /* s'étend sur 2 colonnes */\n}\n\n.sidebar {\n  grid-column: 1 / 2;\n}\n\n.content {\n  grid-column: 2 / 3;\n}\n\n.footer {\n  grid-column: 1 / 3;\n}",
+              "exercise": {
+                "consigne": "Créez une galerie de 9 images (ou divs colorées) organisées en 3 colonnes avec Grid. Puis créez un layout de page avec : header en haut (2 colonnes), sidebar à gauche, content au centre, et footer en bas (2 colonnes)."
+              }
+            }
+          ],
+          "assignment": {
+            "coursePdf": "/pdfs/layouts-modernes-cours.pdf",
+            "tdPdf": "/pdfs/layouts-modernes-exercices.pdf",
+            "instruction": "Projet pratique : Créez une page portfolio complète avec :\n- Header avec menu Flexbox\n- Section 'Projets' avec Grid (3 colonnes)\n- Section 'Services' avec Flexbox cards\n- Footer avec liens en Flexbox\nLe tout doit être responsive.",
+            "criteres": [
+              "Menu horizontal avec Flexbox fonctionnel",
+              "Galerie de projets en Grid 3 colonnes",
+              "Cards de services alignées avec Flexbox",
+              "Code propre et commenté",
+              "Layout qui s'adapte aux différentes tailles"
+            ]
+          }
+        },
+        
+        {
+          "id": "lesson-1-3",
+          "titre": "Tableaux, Formulaires & Structure",
+          "ordre": 3,
+          "description": "Créer des tableaux, formulaires et structurer vos pages de manière professionnelle",
+          "duree": "6h",
+          "videoUrl": "/videos/tableaux-formulaires-structure.mp4",
+          "requiresPreviousValidation": true,
+          "parts": [
+            {
+              "id": "part-1-3-1",
+              "titre": "Tableaux HTML & CSS",
+              "contenu": "Apprenez à créer des tableaux avec les balises <table>, <tr> (ligne), <th> (en-tête), <td> (cellule). Stylisez-les avec CSS : bordures (border, border-collapse), couleurs de fond (background-color), espacement (padding), alignement (text-align).",
+              "ordre": 1,
+              "codeExample": "<!-- HTML Tableau -->\n<table>\n  <thead>\n    <tr>\n      <th>Nom</th>\n      <th>Prénom</th>\n      <th>Âge</th>\n      <th>Ville</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <td>Diallo</td>\n      <td>Mamadou</td>\n      <td>25</td>\n      <td>Dakar</td>\n    </tr>\n    <tr>\n      <td>Ndiaye</td>\n      <td>Aïssa</td>\n      <td>28</td>\n      <td>Thiès</td>\n    </tr>\n  </tbody>\n</table>\n\n/* CSS Tableau */\ntable {\n  width: 100%;\n  border-collapse: collapse; /* Fusionne les bordures */\n}\n\nth, td {\n  border: 1px solid #ddd;\n  padding: 12px;\n  text-align: left;\n}\n\nth {\n  background-color: #2563eb;\n  color: white;\n  font-weight: bold;\n}\n\ntr:nth-child(even) {\n  background-color: #f2f2f2; /* Lignes alternées */\n}\n\ntr:hover {\n  background-color: #ddd; /* Effet survol */\n}",
+              "exercise": {
+                "consigne": "Créez un tableau de 4 colonnes (Produit, Prix, Quantité, Total) avec 5 lignes de données. Stylisez-le avec des bordures, des couleurs alternées, et un effet hover."
+              }
+            },
+            {
+              "id": "part-1-3-2",
+              "titre": "Formulaires HTML & CSS",
+              "contenu": "Créez des formulaires avec <form>, <input> (text, email, password, checkbox, radio, file), <textarea>, <button>, <label>, <select>. Stylisez-les pour une meilleure expérience utilisateur : bordures, padding, focus states, hover effects.",
+              "ordre": 2,
+              "codeExample": "<!-- HTML Formulaire -->\n<form action=\"/submit\" method=\"POST\">\n  <div>\n    <label for=\"nom\">Nom :</label>\n    <input type=\"text\" id=\"nom\" name=\"nom\" required>\n  </div>\n  \n  <div>\n    <label for=\"email\">Email :</label>\n    <input type=\"email\" id=\"email\" name=\"email\" required>\n  </div>\n  \n  <div>\n    <label for=\"password\">Mot de passe :</label>\n    <input type=\"password\" id=\"password\" name=\"password\" required>\n  </div>\n  \n  <div>\n    <label for=\"message\">Message :</label>\n    <textarea id=\"message\" name=\"message\" rows=\"5\"></textarea>\n  </div>\n  \n  <div>\n    <label>\n      <input type=\"checkbox\" name=\"newsletter\"> S'abonner à la newsletter\n    </label>\n  </div>\n  \n  <button type=\"submit\">Envoyer</button>\n</form>\n\n/* CSS Formulaire */\nform {\n  max-width: 500px;\n  margin: 0 auto;\n  padding: 20px;\n}\n\nform div {\n  margin-bottom: 15px;\n}\n\nlabel {\n  display: block;\n  margin-bottom: 5px;\n  font-weight: bold;\n}\n\ninput[type=\"text\"],\ninput[type=\"email\"],\ninput[type=\"password\"],\ntextarea {\n  width: 100%;\n  padding: 10px;\n  border: 2px solid #ddd;\n  border-radius: 5px;\n}\n\ninput:focus,\ntextarea:focus {\n  outline: none;\n  border-color: #2563eb;\n}\n\nbutton {\n  background-color: #2563eb;\n  color: white;\n  padding: 12px 30px;\n  border: none;\n  border-radius: 5px;\n  cursor: pointer;\n}\n\nbutton:hover {\n  background-color: #1d4ed8;\n}",
+              "exercise": {
+                "consigne": "Créez un formulaire de contact complet avec : nom, email, téléphone, sujet (select), message (textarea), et un bouton d'envoi. Stylisez-le avec CSS pour qu'il soit moderne et agréable."
+              }
+            },
+            {
+              "id": "part-1-3-3",
+              "titre": "Structuration & Responsive",
+              "contenu": "Utilisez les balises sémantiques HTML5 pour structurer vos pages : <header> (en-tête), <nav> (navigation), <main> (contenu principal), <section> (section), <article> (article), <aside> (contenu secondaire), <footer> (pied de page). Rendez votre site responsive avec les media queries.",
+              "ordre": 3,
+              "codeExample": "<!-- HTML Structuré -->\n<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Mon Site</title>\n  <link rel=\"stylesheet\" href=\"styles.css\">\n</head>\n<body>\n  <header>\n    <h1>Mon Site Web</h1>\n    <nav>\n      <a href=\"#\">Accueil</a>\n      <a href=\"#\">Services</a>\n      <a href=\"#\">Portfolio</a>\n      <a href=\"#\">Contact</a>\n    </nav>\n  </header>\n  \n  <main>\n    <section id=\"hero\">\n      <h2>Bienvenue</h2>\n      <p>Présentation du site</p>\n    </section>\n    \n    <section id=\"services\">\n      <h2>Nos Services</h2>\n      <article>\n        <h3>Service 1</h3>\n        <p>Description</p>\n      </article>\n    </section>\n    \n    <aside>\n      <h3>Informations</h3>\n      <p>Contenu secondaire</p>\n    </aside>\n  </main>\n  \n  <footer>\n    <p>&copy; 2025 Mon Site. Tous droits réservés.</p>\n  </footer>\n</body>\n</html>\n\n/* CSS Responsive */\n/* Mobile First */\nbody {\n  margin: 0;\n  font-family: Arial, sans-serif;\n}\n\nheader {\n  background-color: #333;\n  color: white;\n  padding: 20px;\n}\n\nnav {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n}\n\n/* Tablette (min 768px) */\n@media (min-width: 768px) {\n  nav {\n    flex-direction: row;\n    justify-content: space-around;\n  }\n  \n  main {\n    display: grid;\n    grid-template-columns: 2fr 1fr;\n    gap: 20px;\n  }\n}\n\n/* Desktop (min 1024px) */\n@media (min-width: 1024px) {\n  .container {\n    max-width: 1200px;\n    margin: 0 auto;\n  }\n}",
+              "exercise": {
+                "consigne": "Créez une page complète avec header, nav, main (avec 2 sections), aside, et footer. Utilisez UNIQUEMENT des balises sémantiques. Ajoutez des media queries pour rendre le site responsive (mobile, tablette, desktop)."
+              }
+            }
+          ],
+          "assignment": {
+            "coursePdf": "/pdfs/tableaux-formulaires-structure-cours.pdf",
+            "tdPdf": "/pdfs/tableaux-formulaires-structure-exercices.pdf",
+            "instruction": "Projet final du module : Créez un site web complet 'Portfolio Personnel' avec :\n- Structure sémantique complète (header, nav, main, sections, footer)\n- Page d'accueil avec présentation\n- Page avec tableau de compétences\n- Page contact avec formulaire stylisé\n- Design responsive (mobile, tablette, desktop)\n- Navigation fonctionnelle entre les pages",
+            "criteres": [
+              "Balises sémantiques HTML5 uniquement",
+              "Tableau correctement structuré et stylisé",
+              "Formulaire complet et fonctionnel avec validation HTML5",
+              "Site 100% responsive avec media queries",
+              "Code propre, commenté et organisé",
+              "CSS externe uniquement"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  
+  "prerequis": [
+    "Ordinateur avec connexion internet",
+    "Motivation et assiduité",
+    "Aucune connaissance préalable requise"
+  ],
+  
+  "debouches": [
+    "Développeur Frontend Junior",
+    "Développeur Full Stack Junior",
+    "Intégrateur Web",
+    "Freelance Web"
+  ]
+}

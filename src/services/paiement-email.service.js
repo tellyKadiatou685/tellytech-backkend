@@ -467,7 +467,7 @@ export const envoyerEmailRappelPaiement = async ({
 
             <!-- Bouton d'action -->
             <div style="text-align: center; margin: 35px 0 25px 0;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/etudiant/dashboard" 
+              <a href="${process.env.FRONTEND_URL || 'https://tellytech-backkend.vercel.app'}/etudiant/dashboard" 
                  style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 35px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px rgba(102, 126, 234, 0.3);">
                 🔐 Accéder à mon espace
               </a>

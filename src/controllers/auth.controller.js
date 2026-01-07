@@ -2,13 +2,24 @@ import prisma from '../config/database.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
+// 🔐 LOGIN
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Vérifier si l'utilisateur existe
+    // ✅ Récupérer l'utilisateur avec TOUS les champs
     const user = await prisma.user.findUnique({
-      where: { email }
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        password: true,
+        nom: true,
+        role: true,
+        formation: true, // ← Peut être null pour admin
+        cohorte: true,   // ← Peut être null pour admin
+        createdAt: true,
+      }
     });
 
     if (!user) {
@@ -18,7 +29,6 @@ export const login = async (req, res) => {
       });
     }
 
-    // Vérifier le mot de passe
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
@@ -28,21 +38,47 @@ export const login = async (req, res) => {
       });
     }
 
-    // Générer le JWT
+    // Générer le JWT avec role
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { 
+        id: user.id, 
+        email: user.email, 
+        role: user.role 
+      },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Enlever le password avant renvoi
-    const { password: _, ...userWithoutPassword } = user;
+    // ✅ Construire la réponse selon le rôle
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      nom: user.nom,
+      role: user.role,
+      createdAt: user.createdAt,
+    };
+
+    // ✅ Ajouter formation/cohorte UNIQUEMENT pour les étudiants (USER)
+    if (user.role === 'USER') {
+      userResponse.formation = user.formation; // ← PAS de valeur par défaut !
+      userResponse.cohorte = user.cohorte;
+      
+      // ⚠️ Warning si formation manquante (erreur de données)
+      if (!user.formation) {
+        console.warn('⚠️ ATTENTION: User étudiant sans formation !', user.email);
+      }
+    }
+
+    console.log('✅ Login réussi:', user.email, '- Role:', user.role);
+    if (user.role === 'USER') {
+      console.log('📚 Formation:', userResponse.formation || 'NON DÉFINIE', '- Cohorte:', userResponse.cohorte);
+    }
 
     res.json({
       success: true,
       message: 'Connexion réussie',
       token,
-      user: userWithoutPassword
+      user: userResponse
     });
 
   } catch (error) {
@@ -54,7 +90,7 @@ export const login = async (req, res) => {
   }
 };
 
-// 🚪 Déconnexion
+// 🚪 DÉCONNEXION
 export const logout = async (req, res) => {
   try {
     // Côté JWT, pas besoin de faire grand-chose côté serveur
@@ -74,7 +110,7 @@ export const logout = async (req, res) => {
   }
 };
 
-// 🔍 Vérifier le token (optionnel - utile pour vérifier si l'utilisateur est toujours connecté)
+// 🔍 VÉRIFIER LE TOKEN
 export const verifyToken = async (req, res) => {
   try {
     // req.user est déjà rempli par le middleware auth
@@ -84,6 +120,9 @@ export const verifyToken = async (req, res) => {
         id: true,
         email: true,
         nom: true,
+        role: true,
+        formation: true,
+        cohorte: true,
         createdAt: true
       }
     });
@@ -95,9 +134,24 @@ export const verifyToken = async (req, res) => {
       });
     }
 
+    // ✅ Construire la réponse selon le rôle
+    const userResponse = {
+      id: user.id,
+      email: user.email,
+      nom: user.nom,
+      role: user.role,
+      createdAt: user.createdAt,
+    };
+
+    // ✅ Ajouter formation/cohorte pour les USER
+    if (user.role === 'USER') {
+      userResponse.formation = user.formation;
+      userResponse.cohorte = user.cohorte;
+    }
+
     res.json({
       success: true,
-      user
+      user: userResponse
     });
 
   } catch (error) {

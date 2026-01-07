@@ -2,7 +2,6 @@ import prisma from '../config/database.js';
 import { envoyerEmailAdmin, envoyerEmailValidation } from '../services/email.service.js';
 import bcrypt from 'bcryptjs';
 
-// Fonction pour générer un code à 4 chiffres
 function genererCode() {
   return Math.floor(1000 + Math.random() * 9000).toString();
 }
@@ -33,7 +32,6 @@ export const inscrireFormation = async (req, res) => {
 
     const code = genererCode();
 
-    // ✅ Créer l'inscription sans les montants (définis à la validation)
     const inscription = await prisma.inscription.create({
       data: {
         nom,
@@ -42,7 +40,8 @@ export const inscrireFormation = async (req, res) => {
         telephone,
         formation,
         code,
-        status: 'PENDING'
+        status: 'PENDING',
+        estActif: true // Par défaut actif lors de l'inscription
       }
     });
 
@@ -74,10 +73,10 @@ export const inscrireFormation = async (req, res) => {
 // 📌 PARTIE ADMIN
 // ========================================
 
-// 📋 Récupérer toutes les inscriptions EN ATTENTE
+// 📋 Récupérer inscriptions EN ATTENTE (avec filtre cohorte)
 export const getInscriptionsPendantes = async (req, res) => {
   try {
-    const { formation } = req.query;
+    const { formation, cohorte } = req.query;
 
     const where = { status: 'PENDING' };
     
@@ -86,6 +85,10 @@ export const getInscriptionsPendantes = async (req, res) => {
         contains: formation,
         mode: 'insensitive'
       };
+    }
+
+    if (cohorte) {
+      where.cohorte = parseInt(cohorte);
     }
 
     const inscriptions = await prisma.inscription.findMany({
@@ -108,10 +111,10 @@ export const getInscriptionsPendantes = async (req, res) => {
   }
 };
 
-// 📋 Récupérer toutes les inscriptions VALIDÉES
+// 📋 Récupérer inscriptions VALIDÉES (avec filtres)
 export const getInscriptionsValidees = async (req, res) => {
   try {
-    const { formation } = req.query;
+    const { formation, cohorte, statut } = req.query;
 
     const where = { status: 'VALIDATED' };
     
@@ -122,15 +125,43 @@ export const getInscriptionsValidees = async (req, res) => {
       };
     }
 
+    if (cohorte) {
+      where.cohorte = parseInt(cohorte);
+    }
+
+    // 🆕 Filtrer par statut actif/inactif
+    if (statut === 'actif') {
+      where.estActif = true;
+    } else if (statut === 'inactif') {
+      where.estActif = false;
+    }
+
     const inscriptions = await prisma.inscription.findMany({
       where,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: {
+        paiements: {
+          where: { status: 'VALIDE' }
+        }
+      }
     });
+
+    // Enrichir avec infos progression
+    const inscriptionsEnrichies = inscriptions.map(ins => ({
+      ...ins,
+      progression: {
+        moisPayes: ins.paiements.length,
+        moisRestants: ins.nombreMois - ins.paiements.length,
+        pourcentage: ins.nombreMois > 0 
+          ? Math.round((ins.paiements.length / ins.nombreMois) * 100) 
+          : 0
+      }
+    }));
 
     res.json({
       success: true,
-      count: inscriptions.length,
-      inscriptions
+      count: inscriptionsEnrichies.length,
+      inscriptions: inscriptionsEnrichies
     });
 
   } catch (error) {
@@ -142,11 +173,11 @@ export const getInscriptionsValidees = async (req, res) => {
   }
 };
 
-// ✅ VALIDER UNE INSCRIPTION - VERSION FINALE (avec montantInscription)
+// ✅ VALIDER UNE INSCRIPTION (avec cohorte)
 export const validerInscription = async (req, res) => {
   try {
     const { id } = req.params;
-    const { montantInscription, nombreMois, mensualite } = req.body;
+    const { montantInscription, nombreMois, mensualite, cohorte } = req.body;
 
     const inscription = await prisma.inscription.findUnique({
       where: { id: parseInt(id) }
@@ -166,17 +197,15 @@ export const validerInscription = async (req, res) => {
       });
     }
 
-    if (!montantInscription || !nombreMois || !mensualite) {
+    if (!montantInscription || !nombreMois || !mensualite || !cohorte) {
       return res.status(400).json({
         success: false,
-        message: 'Tous les montants sont obligatoires'
+        message: 'Tous les champs (montant, durée, mensualité, cohorte) sont obligatoires'
       });
     }
 
-    // 🔐 HASHER LE CODE AVANT CRÉATION
     const passwordHash = await bcrypt.hash(inscription.code, 10);
 
-    // Vérifier si l'utilisateur existe déjà
     const existingUser = await prisma.user.findUnique({
       where: { email: inscription.email }
     });
@@ -188,37 +217,45 @@ export const validerInscription = async (req, res) => {
       });
     }
 
-    // ✅ Créer le compte avec mot de passe hashé
+    // Créer le compte utilisateur
     await prisma.user.create({
       data: {
         nom: `${inscription.prenom} ${inscription.nom}`,
         email: inscription.email,
-        password: passwordHash, // ✅ TOUJOURS HASHÉ
+        password: passwordHash,
         role: 'USER'
       }
     });
 
-    // ✅ Valider l'inscription
+    // 🆕 Calculer la date de fin estimée (début + nombre de mois)
+    const dateDebut = new Date();
+    const dateFin = new Date(dateDebut);
+    dateFin.setMonth(dateFin.getMonth() + parseInt(nombreMois));
+
+    // Valider l'inscription avec cohorte
     const inscriptionValidee = await prisma.inscription.update({
       where: { id: parseInt(id) },
       data: { 
         status: 'VALIDATED',
         montantInscription: parseInt(montantInscription),
         nombreMois: parseInt(nombreMois),
-        mensualite: parseInt(mensualite)
+        mensualite: parseInt(mensualite),
+        cohorte: parseInt(cohorte),
+        estActif: true,
+        dateFinFormation: dateFin
       }
     });
 
-    // ✅ Envoyer l'email avec le code EN CLAIR
     await envoyerEmailValidation({
       nomComplet: `${inscriptionValidee.prenom} ${inscriptionValidee.nom}`,
       email: inscriptionValidee.email,
       formation: inscriptionValidee.formation,
-      code: inscriptionValidee.code, // ⚠️ Code en clair dans l'email
+      code: inscriptionValidee.code,
       telephone: inscriptionValidee.telephone,
       montantInscription: inscriptionValidee.montantInscription,
       mensualite: inscriptionValidee.mensualite,
       nombreMois: inscriptionValidee.nombreMois,
+      cohorte: inscriptionValidee.cohorte,
       inscriptionId: inscriptionValidee.id
     });
 
@@ -237,28 +274,119 @@ export const validerInscription = async (req, res) => {
   }
 };
 
-// 📊 Statistiques globales
+// 🆕 MARQUER UN ÉTUDIANT COMME INACTIF (formation terminée)
+export const marquerEtudiantInactif = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const inscription = await prisma.inscription.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!inscription) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Inscription introuvable' 
+      });
+    }
+
+    const inscriptionMaj = await prisma.inscription.update({
+      where: { id: parseInt(id) },
+      data: { 
+        estActif: false,
+        dateFinFormation: new Date()
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Étudiant marqué comme inactif (formation terminée)',
+      inscription: inscriptionMaj
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Erreur lors de la mise à jour' 
+    });
+  }
+};
+
+// 🆕 RÉACTIVER UN ÉTUDIANT
+export const reactiverEtudiant = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const inscriptionMaj = await prisma.inscription.update({
+      where: { id: parseInt(id) },
+      data: { 
+        estActif: true,
+        dateFinFormation: null
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Étudiant réactivé',
+      inscription: inscriptionMaj
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Erreur lors de la réactivation' 
+    });
+  }
+};
+
+// 📊 Statistiques globales (avec distinction actif/inactif)
 export const getStatistiques = async (req, res) => {
   try {
-    const totalInscriptions = await prisma.inscription.count();
+    const { cohorte, formation } = req.query;
+
+    // Construire le filtre
+    const whereBase = {};
+    if (cohorte) whereBase.cohorte = parseInt(cohorte);
+    if (formation) whereBase.formation = { contains: formation, mode: 'insensitive' };
+
+    // Total inscriptions
+    const totalInscriptions = await prisma.inscription.count({ where: whereBase });
+    
+    // En attente
     const enAttente = await prisma.inscription.count({
-      where: { status: 'PENDING' }
+      where: { ...whereBase, status: 'PENDING' }
     });
+    
+    // Validées
     const validees = await prisma.inscription.count({
-      where: { status: 'VALIDATED' }
+      where: { ...whereBase, status: 'VALIDATED' }
+    });
+
+    // 🆕 Actifs vs Inactifs
+    const actifs = await prisma.inscription.count({
+      where: { ...whereBase, status: 'VALIDATED', estActif: true }
+    });
+
+    const inactifs = await prisma.inscription.count({
+      where: { ...whereBase, status: 'VALIDATED', estActif: false }
     });
 
     // Stats par formation
     const parFormation = await prisma.inscription.groupBy({
       by: ['formation'],
-      _count: {
-        formation: true
-      },
-      orderBy: {
-        _count: {
-          formation: 'desc'
-        }
-      }
+      where: whereBase,
+      _count: { formation: true },
+      orderBy: { _count: { formation: 'desc' } }
+    });
+
+    // 🆕 Stats par cohorte
+    const parCohorte = await prisma.inscription.groupBy({
+      by: ['cohorte'],
+      where: { ...whereBase, cohorte: { not: null } },
+      _count: { cohorte: true },
+      orderBy: { cohorte: 'asc' }
     });
 
     res.json({
@@ -267,9 +395,15 @@ export const getStatistiques = async (req, res) => {
         total: totalInscriptions,
         enAttente,
         validees,
+        actifs,
+        inactifs,
         parFormation: parFormation.map(f => ({
           formation: f.formation,
           count: f._count.formation
+        })),
+        parCohorte: parCohorte.map(c => ({
+          cohorte: c.cohorte,
+          count: c._count.cohorte
         }))
       }
     });
