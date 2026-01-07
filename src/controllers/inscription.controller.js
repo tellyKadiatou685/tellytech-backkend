@@ -217,12 +217,7 @@ export const validerInscription = async (req, res) => {
       });
     }
 
-    // 🆕 Calculer la date de fin estimée (début + nombre de mois)
-    const dateDebut = new Date();
-    const dateFin = new Date(dateDebut);
-    dateFin.setMonth(dateFin.getMonth() + parseInt(nombreMois));
-
-    // ✅ Créer le compte utilisateur AVEC les infos de formation et cohorte
+    // Créer le compte utilisateur
     await prisma.user.create({
       data: {
         nom: `${inscription.prenom} ${inscription.nom}`,
@@ -230,10 +225,14 @@ export const validerInscription = async (req, res) => {
         password: passwordHash,
         role: 'USER',
         formation: inscription.formation,        // ✅ AJOUTÉ
-        cohorte: parseInt(cohorte),              // ✅ AJOUTÉ
-        telephone: inscription.telephone         // ✅ BONUS : ajouter le téléphone aussi
+    cohorte: parseInt(cohorte),      
       }
     });
+
+    // 🆕 Calculer la date de fin estimée (début + nombre de mois)
+    const dateDebut = new Date();
+    const dateFin = new Date(dateDebut);
+    dateFin.setMonth(dateFin.getMonth() + parseInt(nombreMois));
 
     // Valider l'inscription avec cohorte
     const inscriptionValidee = await prisma.inscription.update({
