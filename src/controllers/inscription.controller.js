@@ -1,5 +1,5 @@
 import prisma from '../config/database.js';
-import { envoyerEmailAdmin, envoyerEmailValidation } from '../services/email.service.js';
+import { envoyerEmailAdmin, envoyerEmailValidation,envoyerEmailInscription } from '../services/email.service.js';
 import bcrypt from 'bcryptjs';
 
 function genererCode() {
@@ -41,10 +41,11 @@ export const inscrireFormation = async (req, res) => {
         formation,
         code,
         status: 'PENDING',
-        estActif: true // Par défaut actif lors de l'inscription
+        estActif: true
       }
     });
 
+    // ✅ 1. Email à l'admin (existant)
     await envoyerEmailAdmin({
       nomComplet: `${prenom} ${nom}`,
       email,
@@ -53,6 +54,21 @@ export const inscrireFormation = async (req, res) => {
       code,
       inscriptionId: inscription.id
     });
+
+    // 🆕 2. Email à l'étudiant (NOUVEAU)
+    try {
+      await envoyerEmailInscription({
+        nomComplet: `${prenom} ${nom}`,
+        email,
+        formation,
+        code,
+        inscriptionId: inscription.id
+      });
+      console.log('✅ Email de confirmation envoyé à l\'étudiant');
+    } catch (emailError) {
+      console.error('❌ Erreur email étudiant (non bloquant):', emailError.message);
+      // On ne bloque pas l'inscription même si l'email échoue
+    }
 
     res.status(201).json({
       success: true,
@@ -225,7 +241,7 @@ export const validerInscription = async (req, res) => {
         password: passwordHash,
         role: 'USER',
         formation: inscription.formation,        // ✅ AJOUTÉ
-    cohorte: parseInt(cohorte),      
+        cohorte: parseInt(cohorte),      
       }
     });
 

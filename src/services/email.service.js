@@ -3,23 +3,41 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 
+// ✅ Configuration SMTP optimisée pour PDFs
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
-  secure: false, // true pour le port 465, false pour les autres ports
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
   tls: {
-    rejectUnauthorized: false
+    rejectUnauthorized: false,
+    ciphers: 'SSLv3'
   },
-  connectionTimeout: 10000, // 10 secondes
-  greetingTimeout: 10000,
-  socketTimeout: 10000
+  pool: true,
+  maxConnections: 5,
+  maxMessages: 100,
+  rateDelta: 1000,
+  rateLimit: 5,
+  connectionTimeout: 60000, // ✅ 60 secondes (était 30s)
+  greetingTimeout: 60000,   // ✅ 60 secondes
+  socketTimeout: 60000,     // ✅ 60 secondes
+  debug: false,
+  logger: false
 });
 
-// 📄 Générer le reçu d'inscription PDF
+// Vérifier la connexion SMTP
+transporter.verify(function(error, success) {
+  if (error) {
+    console.error('❌ Erreur connexion SMTP:', error);
+  } else {
+    console.log('✅ Serveur SMTP prêt pour envoi avec pièces jointes');
+  }
+});
+
+// 📄 Générer le reçu d'inscription PDF (VERSION ALLÉGÉE)
 const genererRecuInscriptionPDF = async ({ 
   nomComplet, 
   email, 
@@ -39,16 +57,23 @@ const genererRecuInscriptionPDF = async ({
       const fileName = `recu_inscription_${inscriptionId}_${Date.now()}.pdf`;
       const filePath = path.join(receiptsDir, fileName);
       
-      const doc = new PDFDocument({ size: 'A4', margin: 50 });
-      const stream = fs.createWriteStream(filePath);
+      // ✅ Options de compression PDF
+      const doc = new PDFDocument({ 
+        size: 'A4', 
+        margin: 50,
+        compress: true, // ✅ Active la compression
+        autoFirstPage: true
+      });
       
+      const stream = fs.createWriteStream(filePath);
       doc.pipe(stream);
 
-      // En-tête avec logo
+      // En-tête avec logo (VERSION OPTIMISÉE)
       try {
         const logoPath = path.join(process.cwd(), 'assets', 'Logo TELLY TECH.png');
         if (fs.existsSync(logoPath)) {
-          doc.image(logoPath, 50, 40, { width: 80, align: 'left' });
+          // ✅ Réduire la taille de l'image pour alléger le PDF
+          doc.image(logoPath, 50, 40, { width: 60, align: 'left' }); // 80 → 60
         }
       } catch (error) {
         console.log('Logo non trouvé, utilisation du texte');
@@ -65,7 +90,6 @@ const genererRecuInscriptionPDF = async ({
 
       doc.moveTo(50, 130).lineTo(545, 130).strokeColor('#27446e').stroke();
 
-      // Titre
       doc.fontSize(20)
          .fillColor('#27446e')
          .text('REÇU DE PAIEMENT D\'INSCRIPTION', 50, 150, { align: 'center' });
@@ -75,7 +99,6 @@ const genererRecuInscriptionPDF = async ({
          .text(`N° ${inscriptionId}`, 50, 190)
          .text(`Date: ${dateInscription.toLocaleDateString('fr-FR')}`, 400, 190);
 
-      // Informations du client
       let yPos = 230;
       doc.fontSize(14).fillColor('#27446e').text('INFORMATIONS DE L\'ÉTUDIANT', 50, yPos);
       
@@ -89,7 +112,6 @@ const genererRecuInscriptionPDF = async ({
       yPos += 20;
       doc.text(`Téléphone:`, 50, yPos).text(telephone, 200, yPos);
 
-      // Formation
       yPos += 40;
       doc.fontSize(14).fillColor('#27446e').text('FORMATION CHOISIE', 50, yPos);
       
@@ -97,7 +119,6 @@ const genererRecuInscriptionPDF = async ({
       doc.fontSize(11).fillColor('#000000')
          .text(`Formation:`, 50, yPos).text(formation, 200, yPos);
 
-      // Tableau
       yPos += 50;
       doc.rect(50, yPos, 495, 30).fillAndStroke('#f3f4f6', '#27446e');
       doc.fillColor('#27446e').fontSize(11)
@@ -111,7 +132,6 @@ const genererRecuInscriptionPDF = async ({
          .fontSize(12).fillColor('#673f21')
          .text(`${montantInscription.toLocaleString('fr-FR')} FCFA`, 420, yPos + 12);
 
-      // Total
       yPos += 40;
       doc.rect(50, yPos, 495, 35).fillAndStroke('#e8f0f7', '#27446e');
       doc.fontSize(14).fillColor('#27446e')
@@ -119,21 +139,18 @@ const genererRecuInscriptionPDF = async ({
          .fontSize(16).fillColor('#673f21')
          .text(`${montantInscription.toLocaleString('fr-FR')} FCFA`, 400, yPos + 10);
 
-      // Statut
       yPos += 60;
       doc.fontSize(12).fillColor('#27446e')
          .text('PAIEMENT CONFIRMÉ', 50, yPos, { align: 'center' });
 
-      // Signature avec image
       const signatureY = 600;
       
-      // Image de signature si elle existe
       try {
         const signaturePath = path.join(process.cwd(), 'assets', 'Signature.png');
         if (fs.existsSync(signaturePath)) {
-          doc.image(signaturePath, 60, signatureY + 20, { width: 100 });
+          // ✅ Réduire la taille de la signature
+          doc.image(signaturePath, 60, signatureY + 20, { width: 80 }); // 100 → 80
         } else {
-          // Fallback: signature manuscrite stylisée
           doc.fontSize(16).fillColor('#27446e').font('Helvetica-Oblique')
              .text('Jean Mamady Cissé', 60, signatureY + 25);
         }
@@ -147,17 +164,15 @@ const genererRecuInscriptionPDF = async ({
       doc.fontSize(9).fillColor('#673f21')
          .text('_____________________', 50, signatureY + 50);
       
-      // Cachet avec image
       const cachetX = 450;
       const cachetY = signatureY + 30;
       
       try {
         const cachetPath = path.join(process.cwd(), 'assets', 'Cachet.png');
         if (fs.existsSync(cachetPath)) {
-          doc.image(cachetPath, cachetX - 50, cachetY - 50, { width: 100 }); // Augmenté de 70 à 100
-        }
-      else {
-          // Fallback: cachet dessiné
+          // ✅ Réduire la taille du cachet
+          doc.image(cachetPath, cachetX - 40, cachetY - 40, { width: 80 }); // 100 → 80
+        } else {
           doc.circle(cachetX, cachetY, 35).stroke('#27446e');
           doc.circle(cachetX, cachetY, 33).stroke('#27446e');
           doc.fontSize(8).fillColor('#27446e')
@@ -166,7 +181,6 @@ const genererRecuInscriptionPDF = async ({
              .text('DAKAR', cachetX - 25, cachetY + 10, { width: 50, align: 'center' });
         }
       } catch (error) {
-        // Fallback: cachet dessiné
         doc.circle(cachetX, cachetY, 35).stroke('#27446e');
         doc.circle(cachetX, cachetY, 33).stroke('#27446e');
         doc.fontSize(8).fillColor('#27446e')
@@ -175,7 +189,6 @@ const genererRecuInscriptionPDF = async ({
            .text('DAKAR', cachetX - 25, cachetY + 10, { width: 50, align: 'center' });
       }
 
-      // Note de bas de page
       doc.fontSize(9).fillColor('#999999')
          .text('Ce reçu atteste du paiement des frais d\'inscription.', 50, 720, { align: 'center' })
          .text('Conservez ce document précieusement.', { align: 'center' })
@@ -184,7 +197,7 @@ const genererRecuInscriptionPDF = async ({
       doc.end();
 
       stream.on('finish', () => {
-        console.log(`Reçu d'inscription généré: ${fileName}`);
+        console.log(`✅ Reçu généré (${(fs.statSync(filePath).size / 1024).toFixed(2)} KB)`);
         resolve(filePath);
       });
 
@@ -195,7 +208,7 @@ const genererRecuInscriptionPDF = async ({
   });
 };
 
-// 📘 Générer le guide de bienvenue PDF
+// 📘 Générer le guide de bienvenue PDF (SIMPLIFIÉ - 1 PAGE)
 const genererGuideBienvenuePDF = async ({ 
   nomComplet, 
   formation, 
@@ -213,199 +226,76 @@ const genererGuideBienvenuePDF = async ({
       const fileName = `guide_bienvenue_${inscriptionId}_${Date.now()}.pdf`;
       const filePath = path.join(receiptsDir, fileName);
       
-      const doc = new PDFDocument({ size: 'A4', margin: 50 });
-      const stream = fs.createWriteStream(filePath);
+      // ✅ PDF compressé et UNE SEULE PAGE
+      const doc = new PDFDocument({ 
+        size: 'A4', 
+        margin: 40,
+        compress: true
+      });
       
+      const stream = fs.createWriteStream(filePath);
       doc.pipe(stream);
 
-      // En-tête avec logo
-      try {
-        const logoPath = path.join(process.cwd(), 'assets', 'Logo TELLY TECH.png');
-        if (fs.existsSync(logoPath)) {
-          doc.image(logoPath, 50, 40, { width: 80, align: 'left' });
-        }
-      } catch (error) {
-        console.log('Logo non trouvé');
-      }
+      // En-tête simplifié
+      doc.fontSize(24).fillColor('#27446e')
+         .text('GUIDE DE BIENVENUE', 50, 40, { align: 'center' });
       
-      doc.fontSize(28).fillColor('#27446e')
-         .text('GUIDE DE BIENVENUE', 150, 50, { align: 'left' });
-      
-      doc.fontSize(16).fillColor('#673f21')
-         .text(`Formation: ${formation}`, 50, 100, { align: 'center' });
+      doc.fontSize(14).fillColor('#673f21')
+         .text(`Formation: ${formation}`, 50, 75, { align: 'center' });
 
-      doc.moveTo(50, 130).lineTo(545, 130).strokeColor('#27446e').stroke();
+      doc.moveTo(50, 100).lineTo(545, 100).strokeColor('#27446e').stroke();
 
-      let yPos = 160;
+      let yPos = 120;
 
-      // Bienvenue personnalisée
-      doc.fontSize(14).fillColor('#27446e')
+      doc.fontSize(12).fillColor('#27446e')
          .text(`Cher(e) ${nomComplet},`, 50, yPos);
       
-      yPos += 30;
-      doc.fontSize(11).fillColor('#000000')
-         .text(`Félicitations et bienvenue chez TellyTech ! Nous sommes ravis de vous accompagner dans votre parcours de formation en ${formation}.`, 50, yPos, { 
-           width: 495, 
-           align: 'justify' 
-         });
+      yPos += 25;
+      doc.fontSize(10).fillColor('#000000')
+         .text(`Félicitations ! Vous êtes inscrit(e) à la formation "${formation}".`, 50, yPos, { width: 495 });
 
-      // Section 1: Détails de la formation
-      yPos += 60;
-      doc.fontSize(16).fillColor('#27446e')
-         .text('1. VOTRE FORMATION', 50, yPos);
-      
-      yPos += 30;
-      doc.fontSize(11).fillColor('#000000')
-         .text(`Durée: ${nombreMois} mois`, 70, yPos)
-         .text(`Mensualité: ${mensualite.toLocaleString('fr-FR')} FCFA`, 70, yPos + 20)
-         .text(`Total à payer: ${(nombreMois * mensualite).toLocaleString('fr-FR')} FCFA`, 70, yPos + 40);
-
-      // Section 2: Règles de paiement
-      yPos += 90;
-      doc.fontSize(16).fillColor('#27446e')
-         .text('2. RÈGLES DE PAIEMENT', 50, yPos);
-      
-      yPos += 30;
-      doc.fontSize(11).fillColor('#000000')
-         .text('Les paiements mensuels doivent être effectués avant le 10 de chaque mois', 70, yPos, { width: 475 })
-         .text('Chaque mois doit être payé individuellement via votre espace étudiant', 70, yPos + 22, { width: 475 })
-         .text('Un reçu PDF vous sera envoyé après validation de chaque paiement', 70, yPos + 44, { width: 475 })
-         .text('Tout retard de paiement peut entraîner une suspension temporaire de l\'accès', 70, yPos + 66, { width: 475 })
-         .text(`Montant total de la formation: ${(nombreMois * mensualite).toLocaleString('fr-FR')} FCFA sur ${nombreMois} mois`, 70, yPos + 88, { width: 475 })
-         .text(`Mensualité: ${mensualite.toLocaleString('fr-FR')} FCFA par mois`, 70, yPos + 110, { width: 475 });
-
-      // Section 3: Engagement qualité
-      yPos += 160;
-      doc.fontSize(16).fillColor('#27446e')
-         .text('3. NOTRE ENGAGEMENT QUALITÉ', 50, yPos);
-      
-      yPos += 30;
-      doc.fontSize(11).fillColor('#000000')
-         .text('Chez TellyTech, nous prônons l\'excellence et la rigueur:', 70, yPos, { width: 475 })
-         .text('Formateurs certifiés et expérimentés', 70, yPos + 22)
-         .text('Programme structuré et progressif', 70, yPos + 42)
-         .text('Suivi personnalisé de chaque étudiant', 70, yPos + 62)
-         .text('Projets pratiques et professionnalisants', 70, yPos + 82)
-         .text('Certificat délivré en fin de formation', 70, yPos + 102);
-
-      // Nouvelle page
-      doc.addPage();
-      yPos = 50;
-      
-      doc.fontSize(16).fillColor('#27446e')
-         .text('4. PROGRAMME DE FORMATION', 50, yPos);
-      
-      yPos += 30;
-      doc.fontSize(11).fillColor('#000000')
-         .text(`Votre formation "${formation}" se déroule sur ${nombreMois} mois avec un programme intensif:`, 70, yPos, { width: 475 });
-
+      // Détails compacts
       yPos += 40;
-      const moisProgram = [
-        'Mois 1-2: Fondamentaux et bases essentielles',
-        'Mois 3-4: Pratique et développement de projets',
-        'Mois 5-6: Projets avancés et certification'
-      ];
+      doc.fontSize(12).fillColor('#27446e').text('VOTRE FORMATION', 50, yPos);
+      yPos += 20;
+      doc.fontSize(10).fillColor('#000000')
+         .text(`• Durée: ${nombreMois} mois`, 60, yPos)
+         .text(`• Mensualité: ${mensualite.toLocaleString('fr-FR')} FCFA`, 60, yPos + 15)
+         .text(`• Total: ${(nombreMois * mensualite).toLocaleString('fr-FR')} FCFA`, 60, yPos + 30);
 
-      moisProgram.forEach((mois, index) => {
-        doc.text(`${mois}`, 70, yPos + (index * 25), { width: 475 });
-      });
+      yPos += 60;
+      doc.fontSize(12).fillColor('#27446e').text('RÈGLES DE PAIEMENT', 50, yPos);
+      yPos += 20;
+      doc.fontSize(10).fillColor('#000000')
+         .text('• Paiements avant le 10 de chaque mois via votre espace étudiant', 60, yPos, { width: 485 })
+         .text('• Reçu PDF après chaque validation', 60, yPos + 15, { width: 485 })
+         .text('• Retard = suspension temporaire', 60, yPos + 30, { width: 485 });
 
-      // Section 5: Certification
-      yPos += 110;
-      doc.fontSize(16).fillColor('#27446e')
-         .text('5. RÈGLES ET CERTIFICATION', 50, yPos);
-      
-      yPos += 30;
-      doc.fontSize(12).fillColor('#673f21')
-         .text('Conditions d\'obtention du certificat:', 70, yPos, { width: 475 });
-      
-      yPos += 25;
-      doc.fontSize(11).fillColor('#000000')
-         .text(`Avoir payé et validé l\'intégralité des ${nombreMois} mois de formation (${(nombreMois * mensualite).toLocaleString('fr-FR')} FCFA)`, 70, yPos, { width: 475 })
-         .text('Valider tous les devoirs de chaque module avec une note minimale', 70, yPos + 22, { width: 475 })
-         .text('Réaliser et présenter le projet final avec succès', 70, yPos + 44, { width: 475 })
-         .text('Maintenir une assiduité d\'au moins 80% aux cours', 70, yPos + 66, { width: 475 });
-      
-      yPos += 100;
-      doc.fontSize(12).fillColor('#673f21')
-         .text('Code de conduite obligatoire:', 70, yPos, { width: 475 });
-      
-      yPos += 25;
-      doc.fontSize(11).fillColor('#000000')
-         .text('Assiduité et ponctualité aux cours', 70, yPos)
-         .text('Respect des formateurs et camarades', 70, yPos + 20)
-         .text('Investissement personnel dans les projets', 70, yPos + 40)
-         .text('Communication transparente en cas de difficulté', 70, yPos + 60);
+      yPos += 60;
+      doc.fontSize(12).fillColor('#27446e').text('CERTIFICATION', 50, yPos);
+      yPos += 20;
+      doc.fontSize(10).fillColor('#000000')
+         .text(`• Payer les ${nombreMois} mois intégralement`, 60, yPos)
+         .text('• Valider tous les modules', 60, yPos + 15)
+         .text('• Réussir le projet final', 60, yPos + 30)
+         .text('• Assiduité 80% minimum', 60, yPos + 45);
 
-      // Contact
-      yPos += 100;
-      doc.fontSize(16).fillColor('#27446e')
-         .text('6. NOUS CONTACTER', 50, yPos);
-      
-      yPos += 30;
-      doc.fontSize(11).fillColor('#000000')
-         .text('Email: technologytelly@gmail.com', 70, yPos)
-         .text('Téléphone: +221 78 111 87 69', 70, yPos + 20)
-         .text('Adresse: Dakar, Sénégal', 70, yPos + 40);
+      yPos += 75;
+      doc.fontSize(12).fillColor('#27446e').text('CONTACT', 50, yPos);
+      yPos += 20;
+      doc.fontSize(10).fillColor('#000000')
+         .text('Email: technologytelly@gmail.com', 60, yPos)
+         .text('Tél: +221 78 111 87 69', 60, yPos + 15);
 
-      // Signature avec image
-      yPos += 80;
-      
-      try {
-        const signaturePath = path.join(process.cwd(), 'assets', 'Signature.png');
-        if (fs.existsSync(signaturePath)) {
-          doc.image(signaturePath, 60, yPos + 20, { width: 100 });
-        } else {
-          doc.fontSize(16).fillColor('#27446e').font('Helvetica-Oblique')
-             .text('Jean Mamady Cissé', 60, yPos + 25);
-        }
-      } catch (error) {
-        doc.fontSize(16).fillColor('#27446e').font('Helvetica-Oblique')
-           .text('Jean Mamady Cissé', 60, yPos + 25);
-      }
-      
-      doc.fontSize(10).fillColor('#000000').font('Helvetica').text('Jean Mamady Cissé', 80, yPos);
-      doc.fontSize(9).fillColor('#673f21').text('Manager', 80, yPos + 15);
-      doc.fontSize(9).fillColor('#673f21')
-         .text('_____________________', 50, yPos + 50);
-      
-      // Cachet
-      const cachetX = 450;
-      const cachetY = yPos + 30;
-      
-      try {
-        const cachetPath = path.join(process.cwd(), 'assets', 'Cachet.png');
-        if (fs.existsSync(cachetPath)) {
-          doc.image(cachetPath, cachetX - 35, cachetY - 35, { width: 70 });
-        } else {
-          doc.circle(cachetX, cachetY, 35).stroke('#27446e');
-          doc.circle(cachetX, cachetY, 33).stroke('#27446e');
-          doc.fontSize(8).fillColor('#27446e')
-             .text('TELLYTECH', cachetX - 25, cachetY - 10, { width: 50, align: 'center' })
-             .text('FORMATION', cachetX - 25, cachetY, { width: 50, align: 'center' })
-             .text('DAKAR', cachetX - 25, cachetY + 10, { width: 50, align: 'center' });
-        }
-      } catch (error) {
-        doc.circle(cachetX, cachetY, 35).stroke('#27446e');
-        doc.circle(cachetX, cachetY, 33).stroke('#27446e');
-        doc.fontSize(8).fillColor('#27446e')
-           .text('TELLYTECH', cachetX - 25, cachetY - 10, { width: 50, align: 'center' })
-           .text('FORMATION', cachetX - 25, cachetY, { width: 50, align: 'center' })
-           .text('DAKAR', cachetX - 25, cachetY + 10, { width: 50, align: 'center' });
-      }
-
-      // Message de fin
-      yPos += 80;
-      doc.fontSize(12).fillColor('#27446e')
-         .text('Nous vous souhaitons une excellente formation !', 50, yPos, { align: 'center' });
-      
-      doc.fontSize(10).fillColor('#673f21')
-         .text('L\'équipe TellyTech Formation', 50, yPos + 30, { align: 'center' });
+      // Signature compacte
+      yPos += 50;
+      doc.fontSize(10).fillColor('#27446e').text('Jean Mamady Cissé', 60, yPos);
+      doc.fontSize(9).fillColor('#673f21').text('Manager - TellyTech', 60, yPos + 15);
 
       doc.end();
 
       stream.on('finish', () => {
-        console.log(`Guide de bienvenue généré: ${fileName}`);
+        console.log(`✅ Guide généré (${(fs.statSync(filePath).size / 1024).toFixed(2)} KB)`);
         resolve(filePath);
       });
 
@@ -415,87 +305,26 @@ const genererGuideBienvenuePDF = async ({
     }
   });
 };
+// Ajoutez cette fonction dans votre email.service.js
 
-// 📧 Email à l'admin
-export const envoyerEmailAdmin = async ({ nomComplet, email, telephone, formation, code, inscriptionId }) => {
-  try {
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: process.env.ADMIN_EMAIL,
-      subject: `Nouvelle inscription - ${formation}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #27446e;">Nouvelle demande d'inscription</h2>
-          
-          <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <p><strong>Nom complet:</strong> ${nomComplet}</p>
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Téléphone:</strong> ${telephone}</p>
-            <p><strong>Formation:</strong> ${formation}</p>
-            <hr style="border: 1px solid #d1d5db; margin: 15px 0;">
-            <p style="font-size: 18px;"><strong>CODE:</strong> 
-              <span style="background: #673f21; color: white; padding: 5px 15px; border-radius: 5px; font-weight: bold;">${code}</span>
-            </p>
-          </div>
-          
-          <div style="background: #e8f0f7; padding: 15px; border-left: 4px solid #27446e; margin: 20px 0;">
-            <p style="margin: 0;"><strong>Action requise:</strong></p>
-            <ol style="margin: 10px 0;">
-              <li>Vérifier le paiement (Wave/Orange Money)</li>
-              <li>Valider l'inscription ID: <strong>${inscriptionId}</strong> dans l'admin</li>
-              <li>Le client recevra automatiquement son email de confirmation</li>
-            </ol>
-          </div>
-        </div>
-      `
-    };
+// 📧 NOUVEAU : Email de confirmation d'inscription (envoyé immédiatement)
+// Ajoutez cette fonction dans votre email.service.js
 
-    await transporter.sendMail(mailOptions);
-    console.log('Email admin envoyé');
-  } catch (error) {
-    console.error('Erreur email admin:', error);
-    throw error;
-  }
-};
-
-// 📧 Email professionnel au client après validation
-export const envoyerEmailValidation = async ({ 
+export const envoyerEmailInscription = async ({ 
   nomComplet, 
   email, 
   formation, 
-  code, 
-  telephone,
-  montantInscription,
-  mensualite,
-  nombreMois,
+  code,
   inscriptionId 
 }) => {
   try {
-    // Générer les 2 PDF
-    const recuPath = await genererRecuInscriptionPDF({
-      nomComplet,
-      email,
-      telephone,
-      formation,
-      montantInscription,
-      inscriptionId,
-      dateInscription: new Date()
-    });
-
-    const guidePath = await genererGuideBienvenuePDF({
-      nomComplet,
-      formation,
-      nombreMois,
-      mensualite,
-      inscriptionId
-    });
-
-    const totalAPayer = nombreMois * mensualite;
-
+    console.log(`📤 Envoi email inscription à ${email}...`);
+    
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: `"TellyTech Formation" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: `Confirmation d'inscription - TellyTech Formation`,
+      replyTo: process.env.EMAIL_USER,
+      subject: `Réception de votre demande d'inscription - TellyTech Formation`,
       html: `
         <div style="font-family: 'Georgia', 'Times New Roman', serif; max-width: 650px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb;">
           
@@ -517,55 +346,39 @@ export const envoyerEmailValidation = async ({
             </p>
             
             <p style="margin: 0 0 20px 0; font-size: 15px; text-align: justify;">
-              Nous avons l'honneur de vous confirmer votre inscription à notre formation <strong>"${formation}"</strong>. 
-              Votre paiement des frais d'inscription d'un montant de <strong>${montantInscription.toLocaleString('fr-FR')} FCFA</strong> 
-              a été dûment enregistré.
+              Nous accusons bonne réception de votre demande d'inscription à notre formation 
+              <strong>"${formation}"</strong> et vous en remercions vivement.
             </p>
 
             <p style="margin: 0 0 20px 0; font-size: 15px; text-align: justify;">
-              Votre code d'accès personnel est le suivant : <strong style="color: #27446e; font-size: 18px; letter-spacing: 3px;">${code}</strong>. 
-              Nous vous prions de le conserver soigneusement. Ce code vous permettra d'accéder à votre espace étudiant 
-              et de consulter l'ensemble des ressources pédagogiques.
+              Votre dossier est actuellement en cours d'examen par notre équipe pédagogique. 
+              Un membre de notre service vous contactera sous peu par téléphone afin de confirmer 
+              les modalités de votre inscription et de répondre à l'ensemble de vos questions.
             </p>
 
-            <div style="background: #f9fafb; padding: 25px; margin: 30px 0; border-left: 3px solid #673f21;">
-              <p style="margin: 0 0 15px 0; font-size: 15px; color: #673f21; font-weight: bold;">
-                Modalités de la formation
+            <div style="background: #e8f0f7; padding: 25px; margin: 30px 0; border-left: 4px solid #27446e;">
+              <p style="margin: 0 0 15px 0; font-size: 15px; color: #27446e; font-weight: bold;">
+                À propos de notre plateforme de formation
               </p>
-              <p style="margin: 0 0 10px 0; font-size: 14px;">
-                Durée de la formation : <strong>${nombreMois} mois</strong>
-              </p>
-              <p style="margin: 0 0 10px 0; font-size: 14px;">
-                Mensualité : <strong>${mensualite.toLocaleString('fr-FR')} FCFA</strong>
-              </p>
-              <p style="margin: 0; font-size: 14px;">
-                Montant total restant : <strong style="color: #27446e;">${totalAPayer.toLocaleString('fr-FR')} FCFA</strong>
+              <p style="margin: 0; font-size: 14px; line-height: 1.7; text-align: justify;">
+                TellyTech met à votre disposition une plateforme d'apprentissage moderne et intuitive, 
+                proposant des cours détaillés, des exercices pratiques et un suivi personnalisé. 
+                Vous aurez accès à l'ensemble des ressources pédagogiques dès la validation de votre inscription 
+                par notre équipe.
               </p>
             </div>
 
             <p style="margin: 0 0 20px 0; font-size: 15px; text-align: justify;">
-              Les paiements mensuels devront être effectués avant le 10 de chaque mois via votre espace étudiant. 
-              Un reçu vous sera transmis après chaque validation de paiement.
+              Nous vous invitons à rester attentif à vos emails ainsi qu'à votre téléphone dans les prochains jours. 
+              Notre équipe reviendra vers vous dans les meilleurs délais pour finaliser votre inscription.
             </p>
 
             <p style="margin: 0 0 20px 0; font-size: 15px; text-align: justify;">
-              L'obtention du certificat de fin de formation est conditionnée par le règlement intégral 
-              des ${nombreMois} mensualités, la validation de l'ensemble des modules d'apprentissage, 
-              ainsi que la réussite du projet final.
+              Pour toute question urgente, vous pouvez nous joindre directement par email ou par téléphone 
+              aux coordonnées indiquées ci-dessous.
             </p>
 
-            <p style="margin: 0 0 20px 0; font-size: 15px; text-align: justify;">
-              Nous vous invitons à consulter attentivement les documents joints à ce courrier électronique : 
-              votre reçu de paiement et le guide de bienvenue contenant l'ensemble des informations relatives 
-              au déroulement de votre formation.
-            </p>
-
-            <p style="margin: 30px 0 20px 0; font-size: 15px; text-align: justify;">
-              Toute l'équipe TellyTech se tient à votre disposition pour vous accompagner tout au long 
-              de votre parcours de formation.
-            </p>
-
-            <p style="margin: 0 0 10px 0; font-size: 15px;">
+            <p style="margin: 30px 0 10px 0; font-size: 15px;">
               Nous vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées.
             </p>
 
@@ -593,26 +406,197 @@ export const envoyerEmailValidation = async ({
           </div>
 
         </div>
-      `,
-      attachments: [
-        {
-          filename: `Recu_Inscription_TellyTech_${inscriptionId}.pdf`,
-          path: recuPath,
-          contentType: 'application/pdf'
-        },
-        {
-          filename: `Guide_Bienvenue_TellyTech_${inscriptionId}.pdf`,
-          path: guidePath,
-          contentType: 'application/pdf'
-        }
-      ]
+      `
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log('Email validation professionnel envoyé avec 2 PDF');
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Email inscription envoyé à ${email} - MessageID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
     
   } catch (error) {
-    console.error('Erreur email validation:', error);
+    console.error('❌ Erreur email inscription étudiant:', error);
     throw error;
   }
+};
+// 📧 Email admin (INCHANGÉ)
+export const envoyerEmailAdmin = async ({ nomComplet, email, telephone, formation, code, inscriptionId }) => {
+  try {
+    console.log(`📤 Envoi email admin pour inscription ${inscriptionId}...`);
+    
+    const mailOptions = {
+      from: `"TellyTech Formation" <${process.env.EMAIL_USER}>`,
+      to: process.env.ADMIN_EMAIL,
+      replyTo: email,
+      subject: `✅ Nouvelle inscription - ${formation}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #27446e;">Nouvelle demande d'inscription</h2>
+          
+          <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p><strong>Nom complet:</strong> ${nomComplet}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Téléphone:</strong> ${telephone}</p>
+            <p><strong>Formation:</strong> ${formation}</p>
+            <hr style="border: 1px solid #d1d5db; margin: 15px 0;">
+            <p style="font-size: 18px;"><strong>CODE:</strong> 
+              <span style="background: #673f21; color: white; padding: 5px 15px; border-radius: 5px; font-weight: bold;">${code}</span>
+            </p>
+          </div>
+          
+          <div style="background: #e8f0f7; padding: 15px; border-left: 4px solid #27446e; margin: 20px 0;">
+            <p style="margin: 0;"><strong>Action requise:</strong></p>
+            <ol style="margin: 10px 0;">
+              <li>Vérifier le paiement (Wave/Orange Money)</li>
+              <li>Valider l'inscription ID: <strong>${inscriptionId}</strong></li>
+              <li>L'étudiant recevra automatiquement son email</li>
+            </ol>
+          </div>
+        </div>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Email admin envoyé - MessageID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+    
+  } catch (error) {
+    console.error('❌ Erreur email admin:', error);
+    throw error;
+  }
+};
+
+// 📧 Email validation (VERSION OPTIMISÉE)
+export const envoyerEmailValidation = async ({ 
+  nomComplet, 
+  email, 
+  formation, 
+  code, 
+  telephone,
+  montantInscription,
+  mensualite,
+  nombreMois,
+  inscriptionId 
+}) => {
+  const MAX_RETRIES = 3;
+  let lastError;
+  let recuPath, guidePath;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`📤 [${attempt}/${MAX_RETRIES}] Envoi email à ${email}...`);
+      
+      // ✅ Générer les PDFs
+      recuPath = await genererRecuInscriptionPDF({
+        nomComplet, email, telephone, formation,
+        montantInscription, inscriptionId,
+        dateInscription: new Date()
+      });
+
+      guidePath = await genererGuideBienvenuePDF({
+        nomComplet, formation, nombreMois, mensualite, inscriptionId
+      });
+
+      const totalAPayer = nombreMois * mensualite;
+
+      const mailOptions = {
+        from: `"TellyTech Formation" <${process.env.EMAIL_USER}>`,
+        to: email,
+        replyTo: process.env.EMAIL_USER,
+        subject: `Confirmation d'inscription - TellyTech Formation`,
+        html: `
+          <div style="font-family: 'Georgia', serif; max-width: 650px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb;">
+            <div style="background: #27446e; padding: 30px; text-align: center;">
+              <h1 style="color: #fff; margin: 0; font-size: 26px; letter-spacing: 2px;">TELLYTECH</h1>
+              <p style="color: #fff; margin: 8px 0 0 0; font-size: 13px; opacity: 0.9;">École de Formation Professionnelle</p>
+            </div>
+
+            <div style="padding: 40px; line-height: 1.8; color: #1f2937;">
+              <p style="margin: 0 0 20px 0; font-size: 14px;">
+                Dakar, le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+              
+              <p style="margin: 0 0 20px 0;">Madame, Monsieur <strong>${nomComplet}</strong>,</p>
+              
+              <p style="margin: 0 0 15px 0; text-align: justify;">
+                Nous confirmons votre inscription à <strong>"${formation}"</strong>. 
+                Votre paiement de <strong>${montantInscription.toLocaleString('fr-FR')} FCFA</strong> a été enregistré.
+              </p>
+
+              <p style="margin: 0 0 15px 0;">
+                Votre code d'accès : <strong style="color: #27446e; font-size: 16px;">${code}</strong>
+              </p>
+
+              <div style="background: #f9fafb; padding: 20px; margin: 20px 0; border-left: 3px solid #673f21;">
+                <p style="margin: 0 0 10px 0; font-weight: bold; color: #673f21;">Modalités</p>
+                <p style="margin: 0 0 8px 0;">Durée : <strong>${nombreMois} mois</strong></p>
+                <p style="margin: 0 0 8px 0;">Mensualité : <strong>${mensualite.toLocaleString('fr-FR')} FCFA</strong></p>
+                <p style="margin: 0;">Total restant : <strong>${totalAPayer.toLocaleString('fr-FR')} FCFA</strong></p>
+              </div>
+
+              <p style="margin: 0 0 15px 0; text-align: justify;">
+                Les paiements mensuels sont à effectuer avant le 10 de chaque mois. 
+                Le certificat sera délivré après validation complète des ${nombreMois} mois et du projet final.
+              </p>
+
+              <p style="margin: 30px 0 15px 0;">Veuillez consulter les documents joints pour plus de détails.</p>
+
+              <div style="margin: 30px 0 0 0;">
+                <p style="margin: 0; font-weight: bold; color: #27446e;">Jean Mamady Cissé</p>
+                <p style="margin: 0; font-size: 13px; color: #673f21;">Manager - TellyTech Formation</p>
+              </div>
+            </div>
+
+            <div style="background: #f9fafb; padding: 20px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0 0 5px 0; color: #27446e; font-size: 13px; font-weight: bold;">Contact</p>
+              <p style="margin: 0; color: #6b7280; font-size: 12px;">
+                Email : technologytelly@gmail.com<br>
+                Tél : +221 78 111 87 69<br>
+                Adresse : Dakar, Sénégal
+              </p>
+            </div>
+          </div>
+        `,
+        attachments: [
+          {
+            filename: `Recu_Inscription_${inscriptionId}.pdf`,
+            path: recuPath,
+            contentType: 'application/pdf'
+          },
+          {
+            filename: `Guide_Bienvenue_${inscriptionId}.pdf`,
+            path: guidePath,
+            contentType: 'application/pdf'
+          }
+        ]
+      };
+
+      // ✅ Envoi avec timeout étendu
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✅ Email envoyé à ${email} - MessageID: ${info.messageId}`);
+      
+      // Nettoyage
+      try {
+        if (fs.existsSync(recuPath)) fs.unlinkSync(recuPath);
+        if (fs.existsSync(guidePath)) fs.unlinkSync(guidePath);
+        console.log('🗑️ PDFs nettoyés');
+      } catch (cleanupError) {
+        console.warn('⚠️ Nettoyage PDFs:', cleanupError.message);
+      }
+      
+      return { success: true, messageId: info.messageId, email, attempt };
+      
+    } catch (error) {
+      lastError = error;
+      console.error(`❌ Tentative ${attempt}/${MAX_RETRIES} échouée:`, error.message);
+      
+      if (attempt < MAX_RETRIES) {
+        const delayMs = attempt * 3000; // 3s, 6s, 9s
+        console.log(`⏳ Nouvelle tentative dans ${delayMs/1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  console.error(`❌ ÉCHEC après ${MAX_RETRIES} tentatives pour ${email}`);
+  throw new Error(`Email non envoyé après ${MAX_RETRIES} tentatives: ${lastError.message}`);
 };

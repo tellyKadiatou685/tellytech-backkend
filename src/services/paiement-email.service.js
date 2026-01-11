@@ -61,7 +61,7 @@ export const envoyerEmailDemandeAdmin = async ({
   }
 };
 
-// 📄 Générer le reçu PDF mensuel
+// 📄 Générer le reçu PDF mensuel EN BUFFER (pour production)
 export const genererRecuMensuelPDF = async ({ 
   nomComplet, 
   email, 
@@ -74,20 +74,20 @@ export const genererRecuMensuelPDF = async ({
 }) => {
   return new Promise((resolve, reject) => {
     try {
-      const receiptsDir = path.join(process.cwd(), 'receipts');
-      if (!fs.existsSync(receiptsDir)) {
-        fs.mkdirSync(receiptsDir, { recursive: true });
-      }
-
-      const fileName = `recu_mois${mois}_${paiementId}_${Date.now()}.pdf`;
-      const filePath = path.join(receiptsDir, fileName);
-      
       const doc = new PDFDocument({ size: 'A4', margin: 50 });
-      const stream = fs.createWriteStream(filePath);
       
-      doc.pipe(stream);
+      // ✅ Stocker le PDF dans un Buffer au lieu d'un fichier
+      const buffers = [];
+      
+      doc.on('data', buffers.push.bind(buffers));
+      doc.on('end', () => {
+        const pdfBuffer = Buffer.concat(buffers);
+        console.log('✅ PDF mensuel généré en mémoire');
+        resolve(pdfBuffer);
+      });
+      doc.on('error', reject);
 
-      // Logo
+      // Logo (optionnel - vérifier s'il existe)
       const logoPath = path.join(process.cwd(), 'assets', 'logo.png');
       if (fs.existsSync(logoPath)) {
         doc.image(logoPath, 50, 40, { width: 150 });
@@ -223,27 +223,24 @@ export const genererRecuMensuelPDF = async ({
       const signaturePath = path.join(process.cwd(), 'assets', 'signature.png');
       const cachetPath = path.join(process.cwd(), 'assets', 'cachet.png');
       
-      // Zone signature (gauche)
-doc.fontSize(10)
-   .fillColor('#374151')
-   .font('Helvetica')
-   .text('Le Directeur', 80, signatureY);
+      doc.fontSize(10)
+         .fillColor('#374151')
+         .font('Helvetica')
+         .text('Le Directeur', 80, signatureY);
 
-if (fs.existsSync(signaturePath)) {
-  // ✅ Utilise ta vraie signature
-  doc.image(signaturePath, 70, signatureY + 15, { width: 120, height: 60 });
-} else {
-  // Signature par défaut (stylisée)
-  doc.fontSize(22)
-     .fillColor('#2563eb')
-     .font('Helvetica-Oblique')  // ✅ Police correcte
-     .text('TellyTech', 70, signatureY + 20);
-}
+      if (fs.existsSync(signaturePath)) {
+        doc.image(signaturePath, 70, signatureY + 15, { width: 120, height: 60 });
+      } else {
+        doc.fontSize(22)
+           .fillColor('#2563eb')
+           .font('Helvetica-Oblique')
+           .text('TellyTech', 70, signatureY + 20);
+      }
 
-doc.fontSize(9)
-   .fillColor('#6b7280')
-   .font('Helvetica')
-   .text('_________________', 60, signatureY + 70);
+      doc.fontSize(9)
+         .fillColor('#6b7280')
+         .font('Helvetica')
+         .text('_________________', 60, signatureY + 70);
       
       if (fs.existsSync(cachetPath)) {
         doc.image(cachetPath, 400, signatureY - 10, { width: 110, height: 110 });
@@ -259,7 +256,7 @@ doc.fontSize(9)
            .text('TELLYTECH', 415, signatureY + 25, { width: 80, align: 'center' })
            .fontSize(9)
            .text('FORMATION', 415, signatureY + 45, { width: 80, align: 'center' })
-           .text('2024', 415, signatureY + 71, { width: 80, align: 'center' });
+           .text('2025', 415, signatureY + 71, { width: 80, align: 'center' });
       }
 
       // Bas de page
@@ -270,21 +267,16 @@ doc.fontSize(9)
          .text('Merci de votre confiance !', { align: 'center' })
          .text('technologytelly@gmail.com | +221 78 111 87 69', { align: 'center' });
 
+      // ✅ IMPORTANT : Finaliser le document
       doc.end();
-
-      stream.on('finish', () => {
-        console.log(`✅ PDF mensuel généré: ${fileName}`);
-        resolve(filePath);
-      });
-
-      stream.on('error', reject);
+      
     } catch (error) {
       reject(error);
     }
   });
 };
 
-// 📧 Email à l'étudiant : Paiement validé
+// 📧 Email à l'étudiant : Paiement validé (avec Buffer)
 export const envoyerEmailPaiementValide = async ({ 
   nomComplet, 
   email,
@@ -293,7 +285,7 @@ export const envoyerEmailPaiementValide = async ({
   mois,
   montant,
   paiementId,
-  recuPath
+  recuBuffer // ✅ Reçoit un Buffer au lieu d'un chemin de fichier
 }) => {
   try {
     const mailOptions = {
@@ -324,7 +316,7 @@ export const envoyerEmailPaiementValide = async ({
           <div style="background: #fef3c7; padding: 15px; border-left: 4px solid #f59e0b; margin: 20px 0;">
             <p style="margin: 0;">📄 <strong>Votre reçu de paiement est joint à cet email.</strong></p>
           </div>
-    )
+          
           <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
             Continuez comme ça ! 🚀<br>
             L'équipe TellyTech Formation
@@ -334,7 +326,7 @@ export const envoyerEmailPaiementValide = async ({
       attachments: [
         {
           filename: `Recu_Mois${mois}_TellyTech_${paiementId}.pdf`,
-          path: recuPath,
+          content: recuBuffer, // ✅ Utiliser le Buffer directement
           contentType: 'application/pdf'
         }
       ]
@@ -347,6 +339,7 @@ export const envoyerEmailPaiementValide = async ({
     throw error;
   }
 };
+
 // 📧 Email de rappel de paiement (à envoyer le 10 de chaque mois)
 export const envoyerEmailRappelPaiement = async ({ 
   nomComplet, 

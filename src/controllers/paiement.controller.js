@@ -158,6 +158,7 @@ export const demanderPaiement = async (req, res) => {
   }
 };
 
+// ✅ MODIFIÉ : Téléchargement du reçu en Buffer
 export const telechargerRecu = async (req, res) => {
   try {
     const { paiementId } = req.params;
@@ -181,35 +182,36 @@ export const telechargerRecu = async (req, res) => {
       });
     }
 
-    if (!paiement.recuUrl || !fs.existsSync(paiement.recuUrl)) {
-      console.log('⚠️ PDF introuvable, régénération...');
-      
-      const nouveauRecuPath = await genererRecuMensuelPDF({
-        nomComplet: `${paiement.inscription.prenom} ${paiement.inscription.nom}`,
-        email: paiement.inscription.email,
-        telephone: paiement.inscription.telephone,
-        formation: paiement.inscription.formation,
-        mois: paiement.mois,
-        montant: paiement.montant,
-        paiementId: paiement.id,
-        dateValidation: paiement.dateValidation || new Date()
-      });
+    // ✅ Générer le PDF en Buffer (pas de fichier sur disque)
+    console.log('⚙️ Génération du PDF en mémoire...');
+    
+    const pdfBuffer = await genererRecuMensuelPDF({
+      nomComplet: `${paiement.inscription.prenom} ${paiement.inscription.nom}`,
+      email: paiement.inscription.email,
+      telephone: paiement.inscription.telephone,
+      formation: paiement.inscription.formation,
+      mois: paiement.mois,
+      montant: paiement.montant,
+      paiementId: paiement.id,
+      dateValidation: paiement.dateValidation || new Date()
+    });
 
-      await prisma.paiement.update({
-        where: { id: parseInt(paiementId) },
-        data: { recuUrl: nouveauRecuPath }
-      });
-
-      return res.download(nouveauRecuPath, `Recu_Mois${paiement.mois}_TellyTech.pdf`);
-    }
-
-    res.download(paiement.recuUrl, `Recu_Mois${paiement.mois}_TellyTech.pdf`);
+    // ✅ Envoyer le Buffer directement au client
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Recu_Mois${paiement.mois}_TellyTech.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader('Cache-Control', 'no-cache');
+    
+    res.send(pdfBuffer);
+    
+    console.log('✅ PDF envoyé avec succès');
 
   } catch (error) {
     console.error('❌ Erreur téléchargement reçu:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erreur lors du téléchargement' 
+      message: 'Erreur lors du téléchargement du reçu',
+      error: error.message 
     });
   }
 };
@@ -311,14 +313,13 @@ export const getPaiementsValides = async (req, res) => {
   }
 };
 
-// 🆕 Étudiants avec paiements non effectués (SEULEMENT LES ACTIFS)
 export const getEtudiantsPaiementsNonPayes = async (req, res) => {
   try {
     const { formation, cohorte } = req.query;
 
     const where = { 
       status: 'VALIDATED',
-      estActif: true // ✅ SEULEMENT LES ACTIFS
+      estActif: true
     };
     
     if (formation) where.formation = formation;
@@ -380,14 +381,13 @@ export const getEtudiantsPaiementsNonPayes = async (req, res) => {
   }
 };
 
-// 🆕 Rappels de paiement (SEULEMENT LES ACTIFS)
 export const envoyerRappelsPaiements = async (req, res) => {
   try {
     const { formation, cohorte } = req.query;
 
     const where = { 
       status: 'VALIDATED',
-      estActif: true // ✅ SEULEMENT LES ACTIFS
+      estActif: true
     };
     
     if (formation) where.formation = formation;
@@ -458,14 +458,13 @@ export const envoyerRappelsPaiements = async (req, res) => {
   }
 };
 
-// 📊 Statistiques détaillées par mois (SEULEMENT LES ACTIFS)
 export const getStatistiquesDetailleesParMois = async (req, res) => {
   try {
     const { formation, mois, cohorte } = req.query;
 
     const whereInscription = { 
       status: 'VALIDATED',
-      estActif: true // ✅ SEULEMENT LES ACTIFS
+      estActif: true
     };
     
     if (formation) whereInscription.formation = formation;
@@ -581,6 +580,7 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
   }
 };
 
+// ✅ MODIFIÉ : Validation avec Buffer pour l'email
 export const validerPaiement = async (req, res) => {
   try {
     const { id } = req.params;
@@ -604,7 +604,8 @@ export const validerPaiement = async (req, res) => {
       });
     }
 
-    const recuPath = await genererRecuMensuelPDF({
+    // ✅ Générer le PDF en Buffer
+    const recuBuffer = await genererRecuMensuelPDF({
       nomComplet: `${paiement.inscription.prenom} ${paiement.inscription.nom}`,
       email: paiement.inscription.email,
       telephone: paiement.inscription.telephone,
@@ -615,15 +616,17 @@ export const validerPaiement = async (req, res) => {
       dateValidation: new Date()
     });
 
+    // ✅ Mettre à jour le paiement (sans recuUrl car on ne stocke plus sur disque)
     const paiementValide = await prisma.paiement.update({
       where: { id: parseInt(id) },
       data: {
         status: 'VALIDE',
-        dateValidation: new Date(),
-        recuUrl: recuPath
+        dateValidation: new Date()
+        // ❌ On ne stocke plus recuUrl car le PDF n'est jamais sur disque
       }
     });
 
+    // ✅ Envoyer l'email avec le Buffer
     await envoyerEmailPaiementValide({
       nomComplet: `${paiement.inscription.prenom} ${paiement.inscription.nom}`,
       email: paiement.inscription.email,
@@ -632,7 +635,7 @@ export const validerPaiement = async (req, res) => {
       mois: paiement.mois,
       montant: paiement.montant,
       paiementId: paiement.id,
-      recuPath
+      recuBuffer // ✅ Passer le Buffer au lieu du path
     });
 
     res.json({ 
@@ -645,7 +648,8 @@ export const validerPaiement = async (req, res) => {
     console.error('❌ Erreur validation paiement:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Erreur lors de la validation' 
+      message: 'Erreur lors de la validation',
+      error: error.message 
     });
   }
 };
@@ -685,14 +689,13 @@ export const rejeterPaiement = async (req, res) => {
   }
 };
 
-// 📊 Statistiques globales (SEULEMENT LES ACTIFS)
 export const getStatistiquesPaiements = async (req, res) => {
   try {
     const { formation, cohorte } = req.query;
 
     const inscriptionWhere = { 
       status: 'VALIDATED',
-      estActif: true // ✅ SEULEMENT LES ACTIFS
+      estActif: true
     };
     
     if (formation) inscriptionWhere.formation = formation;
@@ -730,7 +733,7 @@ export const getStatistiquesPaiements = async (req, res) => {
             status: 'VALIDE',
             inscription: { 
               formation: stat.formation,
-              estActif: true // ✅ SEULEMENT LES ACTIFS
+              estActif: true
             }
           }
         });
