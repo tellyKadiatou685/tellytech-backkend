@@ -10,7 +10,11 @@ import {
   telechargerRecu,
   getEtudiantsPaiementsNonPayes,
   envoyerRappelsPaiements,
-  getStatistiquesDetailleesParMois
+  getStatistiquesDetailleesParMois,
+  getStatistiquesParMois,
+  getDetailsEtudiant,
+  getFormationsDisponibles,
+  getCohortesDisponibles
 } from '../controllers/paiement.controller.js';
 
 const router = express.Router();
@@ -36,5 +40,20 @@ router.get('/admin/non-payes', getEtudiantsPaiementsNonPayes);
 router.post('/admin/rappels', envoyerRappelsPaiements);
 
 // Avec filtres ?formation=Web%20Development
+// 📊 Vue par mois avec filtres
+// GET /api/paiements/admin/stats-mois?formation=Marketing&cohorte=1
+router.get('/admin/stats-mois', getStatistiquesParMois);
+
+// 👤 Détails d'un étudiant spécifique
+// GET /api/paiements/admin/etudiant/123
+router.get('/admin/etudiant/:id', getDetailsEtudiant);
+
+// 📋 Listes de référence pour les filtres
+// GET /api/paiements/admin/formations
+router.get('/admin/formations', getFormationsDisponibles);
+
+// GET /api/paiements/admin/cohortes?formation=Marketing
+router.get('/admin/cohortes', getCohortesDisponibles);
 
 export default router;
+
