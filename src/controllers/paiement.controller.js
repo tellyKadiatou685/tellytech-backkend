@@ -53,7 +53,7 @@ export const getDashboardEtudiant = async (req, res) => {
       dateValidation: p.dateValidation,
       createdAt: p.createdAt,
       urlTelechargement: p.status === 'VALIDE' 
-        ? `${process.env.API_URL || 'http://localhost:8000'}/api/paiements/etudiant/recu/${p.id}` 
+        ? `${process.env.API_URL || 'https://tellytech-backkend.vercel.app'}/api/paiements/etudiant/recu/${p.id}` 
         : null
     }));
 
