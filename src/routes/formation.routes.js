@@ -4,39 +4,24 @@ import upload from '../middleware/upload.js';
 
 const router = express.Router();
 
-// Récupérer toutes les formations
-router.get('/', formationController.getAll);
+// Champs acceptés pour l'upload
+const uploadFields = upload.fields([
+  { name: 'image',          maxCount: 1  },
+  { name: 'brochure',       maxCount: 1  },
+  { name: 'imagesCarousel', maxCount: 10 }
+]);
 
-// Récupérer une formation par slug
-router.get('/slug/:slug', formationController.getBySlug);
+// ── PUBLIC ───────────────────────────────────────────────────
+router.get('/',                      formationController.getAll);
+router.get('/search',                formationController.search);
+router.get('/slug/:slug',            formationController.getBySlug);
+router.get('/categorie/:categorie',  formationController.getByCategorie);
+router.get('/:id',                   formationController.getById);
 
-// Récupérer les formations par catégorie
-router.get('/categorie/:categorie', formationController.getByCategorie);
-
-// Récupérer une formation par ID
-router.get('/:id', formationController.getById);
-
-// Créer une formation
-router.post(
-  '/',
-  upload.fields([
-    { name: 'image', maxCount: 1 },
-    { name: 'brochure', maxCount: 1 }
-  ]),
-  formationController.create
-);
-
-// Mettre à jour une formation
-router.put(
-  '/:id',
-  upload.fields([
-    { name: 'image', maxCount: 1 },
-    { name: 'brochure', maxCount: 1 }
-  ]),
-  formationController.update
-);
-
-// Supprimer une formation
-router.delete('/:id', formationController.delete);
+// ── ADMIN ────────────────────────────────────────────────────
+router.post('/',              uploadFields, formationController.create);
+router.put('/:id',            uploadFields, formationController.update);
+router.patch('/:id/toggle',              formationController.toggleActivation);
+router.delete('/:id',                    formationController.delete);
 
 export default router;

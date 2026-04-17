@@ -122,7 +122,6 @@ const genererRecuInscriptionBuffer = ({
       doc.fontSize(12).fillColor('#27446e')
         .text('PAIEMENT CONFIRMÉ', 50, yPos, { align: 'center' });
 
-      // Signature texte (pas d'image — compatible Vercel)
       doc.fontSize(10).fillColor('#000000').text('Jean Mamady Cissé', 80, 620);
       doc.fontSize(9).fillColor('#673f21').text('Manager', 80, 635);
 
@@ -140,12 +139,13 @@ const genererRecuInscriptionBuffer = ({
 
 // ============================================================
 // 📘 PDF GUIDE BIENVENUE → Buffer (compatible Vercel)
+//    mensualite est OPTIONNEL (null pour paiement unique)
 // ============================================================
 const genererGuideBienvenueBuffer = ({
   nomComplet,
   formation,
   nombreMois,
-  mensualite,
+  mensualite,      // null ou 0 = paiement unique (Bureautique, CM, Audiovisuel…)
   inscriptionId
 }) => {
   return new Promise((resolve, reject) => {
@@ -156,6 +156,8 @@ const genererGuideBienvenueBuffer = ({
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
+
+      const estPaiementUnique = !mensualite || mensualite === 0;
 
       doc.fontSize(24).fillColor('#27446e')
         .text('GUIDE DE BIENVENUE', 50, 40, { align: 'center' });
@@ -175,24 +177,49 @@ const genererGuideBienvenueBuffer = ({
       yPos += 40;
       doc.fontSize(12).fillColor('#27446e').text('VOTRE FORMATION', 50, yPos);
       yPos += 20;
-      doc.fontSize(10).fillColor('#000000')
-        .text(`• Durée: ${nombreMois} mois`, 60, yPos)
-        .text(`• Mensualité: ${mensualite.toLocaleString('fr-FR')} FCFA`, 60, yPos + 15)
-        .text(`• Total: ${(nombreMois * mensualite).toLocaleString('fr-FR')} FCFA`, 60, yPos + 30);
 
-      yPos += 60;
+      // ── Durée (toujours affichée) ─────────────────────────────────────
+      doc.fontSize(10).fillColor('#000000')
+        .text(`• Durée : ${nombreMois} mois`, 60, yPos);
+
+      if (estPaiementUnique) {
+        // Paiement unique → pas de mensualité
+        doc.text('• Paiement unique — formation réglée intégralement', 60, yPos + 15);
+        yPos += 40;
+      } else {
+        // Paiement mensuel → afficher mensualité + total
+        doc
+          .text(`• Mensualité : ${mensualite.toLocaleString('fr-FR')} FCFA`, 60, yPos + 15)
+          .text(`• Total : ${(nombreMois * mensualite).toLocaleString('fr-FR')} FCFA`, 60, yPos + 30);
+        yPos += 60;
+      }
+
+      // ── Règles de paiement ────────────────────────────────────────────
       doc.fontSize(12).fillColor('#27446e').text('RÈGLES DE PAIEMENT', 50, yPos);
       yPos += 20;
-      doc.fontSize(10).fillColor('#000000')
-        .text('• Paiements avant le 10 de chaque mois via votre espace étudiant', 60, yPos, { width: 485 })
-        .text('• Reçu PDF après chaque validation', 60, yPos + 15, { width: 485 })
-        .text('• Retard = suspension temporaire', 60, yPos + 30, { width: 485 });
+
+      if (estPaiementUnique) {
+        doc.fontSize(10).fillColor('#000000')
+          .text('• Paiement unique effectué à l\'inscription', 60, yPos, { width: 485 })
+          .text('• Reçu PDF joint à cet email', 60, yPos + 15, { width: 485 })
+          .text('• Aucune mensualité à régler', 60, yPos + 30, { width: 485 });
+      } else {
+        doc.fontSize(10).fillColor('#000000')
+          .text('• Paiements avant le 10 de chaque mois via votre espace étudiant', 60, yPos, { width: 485 })
+          .text('• Reçu PDF après chaque validation', 60, yPos + 15, { width: 485 })
+          .text('• Retard = suspension temporaire', 60, yPos + 30, { width: 485 });
+      }
 
       yPos += 60;
       doc.fontSize(12).fillColor('#27446e').text('CERTIFICATION', 50, yPos);
       yPos += 20;
       doc.fontSize(10).fillColor('#000000')
-        .text(`• Payer les ${nombreMois} mois intégralement`, 60, yPos)
+        .text(
+          estPaiementUnique
+            ? '• Paiement unique validé'
+            : `• Payer les ${nombreMois} mois intégralement`,
+          60, yPos
+        )
         .text('• Valider tous les modules', 60, yPos + 15)
         .text('• Réussir le projet final', 60, yPos + 30)
         .text('• Assiduité 80% minimum', 60, yPos + 45);
@@ -354,6 +381,8 @@ export const envoyerEmailAdmin = async ({
 
 // ============================================================
 // 📧 EMAIL VALIDATION (avec PDFs en Buffer — compatible Vercel)
+//    mensualite    → optionnel (null/0 = paiement unique)
+//    estPaiementUnique → flag explicite envoyé par le contrôleur
 // ============================================================
 export const envoyerEmailValidation = async ({
   nomComplet,
@@ -362,12 +391,17 @@ export const envoyerEmailValidation = async ({
   code,
   telephone,
   montantInscription,
-  mensualite,
+  mensualite,          // null ou 0 pour Bureautique, CM, Audiovisuel…
   nombreMois,
+  estPaiementUnique,   // booléen envoyé par validerInscription()
+  cohorte,
   inscriptionId
 }) => {
   const MAX_RETRIES = 3;
   let lastError;
+
+  // S'assurer que le flag est cohérent même si le contrôleur ne l'envoie pas
+  const _paiementUnique = estPaiementUnique || !mensualite || mensualite === 0;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -388,14 +422,45 @@ export const envoyerEmailValidation = async ({
           nomComplet,
           formation,
           nombreMois,
-          mensualite,
+          mensualite,   // null si paiement unique → le PDF s'adapte
           inscriptionId
         })
       ]);
 
       console.log(`✅ PDFs en mémoire: reçu ${(recuBuffer.length / 1024).toFixed(1)}KB | guide ${(guideBuffer.length / 1024).toFixed(1)}KB`);
 
-      const totalAPayer = nombreMois * mensualite;
+      // ── Bloc financier HTML adaptatif ─────────────────────────────────
+      const blocFinancierHtml = _paiementUnique
+        ? `
+          <div style="background: #f9fafb; padding: 20px; margin: 20px 0; border-left: 3px solid #673f21;">
+            <p style="margin: 0 0 10px 0; font-weight: bold; color: #673f21;">Modalités financières</p>
+            <p style="margin: 0 0 8px 0;">Frais d'inscription : <strong>${montantInscription.toLocaleString('fr-FR')} FCFA</strong></p>
+            <p style="margin: 0 0 8px 0;">Durée : <strong>${nombreMois} mois</strong></p>
+            <p style="margin: 0; background: #f0fdf4; padding: 8px 12px; border-radius: 4px;
+                      color: #15803d; font-weight: bold;">
+              ✅ Paiement unique — aucune mensualité requise
+            </p>
+          </div>
+        `
+        : `
+          <div style="background: #f9fafb; padding: 20px; margin: 20px 0; border-left: 3px solid #673f21;">
+            <p style="margin: 0 0 10px 0; font-weight: bold; color: #673f21;">Modalités financières</p>
+            <p style="margin: 0 0 8px 0;">Frais d'inscription : <strong>${montantInscription.toLocaleString('fr-FR')} FCFA</strong></p>
+            <p style="margin: 0 0 8px 0;">Mensualité : <strong>${mensualite.toLocaleString('fr-FR')} FCFA / mois</strong></p>
+            <p style="margin: 0 0 8px 0;">Durée : <strong>${nombreMois} mois</strong></p>
+            <p style="margin: 0; background: #fffbeb; padding: 8px 12px; border-radius: 4px;
+                      color: #92400e; font-weight: bold;">
+              💡 Total à régler : ${(mensualite * nombreMois).toLocaleString('fr-FR')} FCFA sur ${nombreMois} mois
+            </p>
+          </div>
+        `;
+
+      // ── Texte de bas du corps adaptatif ──────────────────────────────
+      const texteModalites = _paiementUnique
+        ? `Votre formation est entièrement réglée. Le certificat sera délivré après validation
+           de tous les modules et du projet final.`
+        : `Les paiements mensuels sont à effectuer avant le 10 de chaque mois via votre espace étudiant.
+           Le certificat sera délivré après validation complète des ${nombreMois} mois et du projet final.`;
 
       const mailOptions = {
         from: `"TellyTech Formation" <${process.env.EMAIL_USER}>`,
@@ -414,22 +479,16 @@ export const envoyerEmailValidation = async ({
               </p>
               <p style="margin: 0 0 20px 0;">Madame, Monsieur <strong>${nomComplet}</strong>,</p>
               <p style="margin: 0 0 15px 0; text-align: justify;">
-                Nous confirmons votre inscription à <strong>"${formation}"</strong>.
+                Nous confirmons votre inscription à la formation <strong>"${formation}"</strong>.
                 Votre paiement de <strong>${montantInscription.toLocaleString('fr-FR')} FCFA</strong> a été enregistré.
               </p>
               <p style="margin: 0 0 15px 0;">
                 Votre code d'accès : <strong style="color: #27446e; font-size: 16px;">${code}</strong>
               </p>
-              <div style="background: #f9fafb; padding: 20px; margin: 20px 0; border-left: 3px solid #673f21;">
-                <p style="margin: 0 0 10px 0; font-weight: bold; color: #673f21;">Modalités</p>
-                <p style="margin: 0 0 8px 0;">Durée : <strong>${nombreMois} mois</strong></p>
-                <p style="margin: 0 0 8px 0;">Mensualité : <strong>${mensualite.toLocaleString('fr-FR')} FCFA</strong></p>
-                <p style="margin: 0;">Total restant : <strong>${totalAPayer.toLocaleString('fr-FR')} FCFA</strong></p>
-              </div>
-              <p style="margin: 0 0 15px 0; text-align: justify;">
-                Les paiements mensuels sont à effectuer avant le 10 de chaque mois.
-                Le certificat sera délivré après validation complète des ${nombreMois} mois et du projet final.
-              </p>
+
+              ${blocFinancierHtml}
+
+              <p style="margin: 0 0 15px 0; text-align: justify;">${texteModalites}</p>
               <p style="margin: 30px 0 15px 0;">Veuillez consulter les documents joints pour plus de détails.</p>
               <div style="margin: 30px 0 0 0;">
                 <p style="margin: 0; font-weight: bold; color: #27446e;">Jean Mamady Cissé</p>
@@ -449,7 +508,6 @@ export const envoyerEmailValidation = async ({
         attachments: [
           {
             filename: `Recu_Inscription_${inscriptionId}.pdf`,
-            // ✅ content: Buffer au lieu de path: chemin fichier
             content: recuBuffer,
             contentType: 'application/pdf'
           },

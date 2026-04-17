@@ -7,111 +7,253 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ✅ GARDER ces models (données de la plateforme)
+// ============================================================
+// 🏫 FORMATIONS (catalogue public)
+// ============================================================
+
 model Formation {
-  id            Int        @id @default(autoincrement())
-  titre         String
-  slug          String      @unique
-  description   String
-  programme     String?
-  duree         String?
-  tarifPres     Int?
-  tarifOnline   Int?
-  mensualite    Int?
-  nombreMois    Int?
-  imageUrl      String?
-  brochureUrl   String?
-  categorie     String
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id                 Int      @id @default(autoincrement())
+  titre              String
+  slug               String   @unique
+  description        String
+  categorie          String
+  niveau             String   @default("Débutant")
+  nombreMois         Int?
+  mensualite         Int?
+  montantInscription Int?
+  prerequis          String?
+  objectifs          String?
+  programme          String?
+  imageUrl           String?
+  brochureUrl        String?
+  disponibilite      String   @default("Actuellement disponible")
+  estActif           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
+
+// ============================================================
+// 📩 MESSAGES (formulaire de contact)
+// ============================================================
 
 model Message {
-  id          Int       @id @default(autoincrement())
-  prenom      String
-  nom         String
-  email       String
-  telephone   String?
-  sujet       String
-  message     String
-  lu          Boolean   @default(false)
-  createdAt   DateTime  @default(now())
+  id        Int      @id @default(autoincrement())
+  prenom    String
+  nom       String
+  email     String
+  telephone String?
+  sujet     String
+  message   String
+  lu        Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
+// ============================================================
+// 🎓 INSCRIPTIONS & PAIEMENTS
+// ============================================================
+
 model Inscription {
-  id                  Int        @id @default(autoincrement())
-  nom                 String
-  prenom              String
-  email               String     @unique
-  telephone           String
-  formation           String
-  submissions         Submission[]
+  id                 Int                @id @default(autoincrement())
+  nom                String
+  prenom             String
+  email              String             @unique
+  telephone          String
+  formation          String
 
-  montantInscription  Int        @default(30000)
-  mensualite          Int?
-  nombreMois          Int?
+  montantInscription Int                @default(30000)
+  mensualite         Int?
+  nombreMois         Int?
+  cohorte            Int?
+  estActif           Boolean            @default(true)
+  dateFinFormation   DateTime?
+  status             Status             @default(PENDING)
+  code               String?            @unique
 
-  cohorte             Int?
-  estActif            Boolean    @default(true)
-  dateFinFormation    DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  status              Status     @default(PENDING)
-  code                String?    @unique
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
-  paiements           Paiement[]
+  // Relations
+  paiements          Paiement[]
+  lessonSubmissions  LessonSubmission[]
+
+  // Anciennes relations (compatibilité — à migrer progressivement)
+  submissions        Submission[]
+  devoirSoumissions    DevoirSubmission[]  // ✅ ça
 }
 
 model Paiement {
-  id              Int             @id @default(autoincrement())
-  inscriptionId   Int
-  inscription     Inscription     @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
-  mois            Int
-  montant         Int
-  status          StatusPaiement  @default(EN_ATTENTE)
-  dateValidation  DateTime?
-  recuUrl         String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id             Int            @id @default(autoincrement())
+  inscriptionId  Int
+  inscription    Inscription    @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
+  mois           Int
+  montant        Int
+  status         StatusPaiement @default(EN_ATTENTE)
+  dateValidation DateTime?
+  recuUrl        String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 }
 
-model Evenement {
-  id          Int        @id @default(autoincrement())
+// ============================================================
+// 📚 COURS (modules & leçons — géré par admin/coach)
+// ============================================================
+
+model CourseModule {
+  id          String         @id @default(cuid())
+  formation   String         // slug de la formation ex: "dev-web"
   titre       String
-  slug        String      @unique
+  ordre       Int
+  description String         @db.Text
+  duree       String         // ex: "8h"
+  objectifs   String[]
+  lessons     CourseLesson[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([formation])
+  @@index([formation, ordre])
+}
+
+model CourseLesson {
+  id                         String             @id @default(cuid())
+  moduleId                   String
+  module                     CourseModule       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  titre                      String
+  ordre                      Int
+  description                String             @db.Text
+  duree                      String             // ex: "2h"
+
+  // Contenu
+  videoUrl                   String?            // URL YouTube OU URL Cloudinary
+  videoType                  String?            // "youtube" | "cloudinary"
+  videoPublicId              String?            // Public ID Cloudinary (pour suppression)
+  pdfUrl                     String?            // URL Cloudinary du PDF (cours + exos)
+  pdfPublicId                String?            // Public ID Cloudinary (pour suppression)
+  consigneExo                String?            @db.Text // Instructions de l'exercice
+
+  // Verrouillage séquentiel
+  requiresPreviousValidation Boolean            @default(true)
+
+  submissions                LessonSubmission[]
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+
+  @@index([moduleId])
+  @@index([moduleId, ordre])
+}
+
+// ============================================================
+// 📤 SOUMISSIONS ÉTUDIANTS (nouvelle architecture)
+// ============================================================
+
+model LessonSubmission {
+  id            Int              @id @default(autoincrement())
+  lessonId      String
+  lesson        CourseLesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  inscriptionId Int
+  inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
+
+  // Soumission : lien OU fichier uploadé
+  link          String?          // GitHub, Google Drive, etc.
+  fileUrl       String?          // URL Cloudinary du fichier soumis
+  filePublicId  String?          // Public ID Cloudinary (pour suppression)
+  fileName      String?          // Nom original du fichier
+
+  // Correction
+  note          Int?             // /20, null avant correction
+  feedback      String?          // Commentaire du coach/admin
+  status        SubmissionStatus @default(PENDING)
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([lessonId, inscriptionId])
+  @@index([inscriptionId])
+  @@index([lessonId])
+  @@index([status])
+}
+
+// ============================================================
+// 🗂️ ANCIENNES TABLES SUBMISSIONS (compatibilité)
+// ============================================================
+
+model Assignment {
+  id          Int          @id @default(autoincrement())
+  partId      String
+  lessonId    String
+  moduleId    String
+  formation   String
+  instruction String
+  submissions Submission[]
+  createdAt   DateTime     @default(now())
+
+  @@unique([partId, formation])
+  @@index([lessonId, moduleId])
+}
+
+model Submission {
+  id            Int              @id @default(autoincrement())
+  assignmentId  Int
+  assignment    Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  inscriptionId Int
+  inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
+  link          String
+  status        SubmissionStatus @default(PENDING)
+  feedback      String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([inscriptionId, assignmentId])
+  @@index([inscriptionId])
+  @@index([assignmentId])
+  @@index([status])
+}
+
+// ============================================================
+// 🗞️ CONTENU ÉDITORIAL
+// ============================================================
+
+model Evenement {
+  id          Int       @id @default(autoincrement())
+  titre       String
+  slug        String    @unique
   description String
   date        DateTime
   imageUrl    String?
   gallery     Galerie[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-}
-
-model Galerie {
-  id          Int        @id @default(autoincrement())
-  url         String
-  evenementId Int
-  evenement   Evenement  @relation(fields: [evenementId], references: [id])
-}
-
-model Article {
-  id          Int        @id @default(autoincrement())
-  titre       String
-  slug        String      @unique
-  contenu     String
-  imageUrl    String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-}
-
-model Service {
-  id          Int       @id @default(autoincrement())
-  titre       String
-  description String
-  imageUrl    String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
+
+model Galerie {
+  id          Int       @id @default(autoincrement())
+  url         String
+  evenementId Int
+  evenement   Evenement @relation(fields: [evenementId], references: [id])
+}
+
+model Article {
+  id        Int      @id @default(autoincrement())
+  titre     String
+  slug      String   @unique
+  contenu   String
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Service {
+  id          Int      @id @default(autoincrement())
+  titre       String
+  description String
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================================
+// 👤 UTILISATEURS
+// ============================================================
 
 model User {
   id        Int      @id @default(autoincrement())
@@ -124,46 +266,83 @@ model User {
   createdAt DateTime @default(now())
 }
 
-// 🆕 MODIFIÉ : Assignment avec partId
-model Assignment {
-  id          Int          @id @default(autoincrement())
-  partId      String       // 🆕 "part-1-1-1" (ID de la partie depuis JSON)
-  lessonId    String       // ✅ "lesson-1-1" (pour référence)
-  moduleId    String       // ✅ "module-1" (pour référence)
-  formation   String       // ✅ "dev-web"
-  instruction String       // Titre de la partie
-  submissions Submission[]
-  createdAt   DateTime     @default(now())
+// ============================================================
+// 📝 DEVOIRS (programmés par l'admin)
+// ============================================================
 
-  @@unique([partId, formation]) // 🆕 Une partie par formation
-  @@index([lessonId, moduleId])
+model Devoir {
+  id             Int                @id @default(autoincrement())
+  titre          String
+  consigne       String             @db.Text
+  fichierUrl     String?            // PDF énoncé (Cloudinary)
+  fichierPublicId String?           // Public ID Cloudinary (pour suppression)
+  formation      String             // slug ex: "dev-web"
+  cohorte        Int?               // null = toutes les cohortes
+  ouvertureAt    DateTime           // quand le devoir devient visible
+  deadline       DateTime           // date limite de rendu
+  dureeMinutes   Int                // durée en minutes ex: 120
+  actif          Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  soumissions    DevoirSubmission[]
+
+  @@index([formation])
+  @@index([formation, cohorte])
+  @@index([actif])
 }
 
-// ✅ Submission : TD soumis par l'étudiant (INCHANGÉ)
-model Submission {
+model DevoirSubmission {
   id            Int              @id @default(autoincrement())
-  assignmentId  Int
-  assignment    Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  devoirId      Int
+  devoir        Devoir           @relation(fields: [devoirId], references: [id], onDelete: Cascade)
   inscriptionId Int
   inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
-  link          String
-  status        SubmissionStatus @default(PENDING)
-  feedback      String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+appreciation  String?   // "Excellent" | "Bien" | "Assez bien" | "Passable" | "Insuffisant"
+  // Rendu étudiant
+  fichierUrl    String?          // URL Cloudinary du fichier rendu
+  fichierPublicId String?        // Public ID Cloudinary (pour suppression)
+  fileName      String?          // Nom original du fichier
 
-  @@unique([inscriptionId, assignmentId]) // 🆕 Un étudiant = une soumission par assignment (donc par partie)
+  // Correction admin/coach
+  note          Int?             // /20, null avant correction
+  feedback      String?          @db.Text
+  status        SubmissionStatus @default(PENDING)
+
+  soumisAt      DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([devoirId, inscriptionId])   // un seul rendu par étudiant par devoir
+  @@index([devoirId])
   @@index([inscriptionId])
-  @@index([assignmentId])
   @@index([status])
 }
 
-enum ContentStatus {
-  DRAFT
-  PENDING
-  PUBLISHED
-  ARCHIVED
+
+model EmploiDuTemps {
+  id        Int      @id @default(autoincrement())
+  formation String   // slug de la formation ex: "dev-web"
+  cohorte   String   // ex: "Cohorte 1", "Cohorte 2"
+  jour      Jour
+  heureDebut String  // ex: "08:00"
+  heureFin  String   // ex: "10:00"
+  matiere   String   // ex: "JavaScript Avancé"
+  type      TypeCours
+  salle     String?  // optionnel
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([formation])
+  @@index([formation, cohorte])
+  @@index([formation, jour])
 }
+
+// Ajoute aussi ces enums dans la section enums du schema.prisma
+
+
+// ============================================================
+// 🔢 ENUMS
+// ============================================================
 
 enum SubmissionStatus {
   PENDING
@@ -187,7 +366,23 @@ enum Role {
   USER
   COACH
 }
+enum Jour {
+  Lundi
+  Mardi
+  Mercredi
+  Jeudi
+  Vendredi
+  Samedi
+}
 
-// 📝 APRÈS AVOIR MODIFIÉ CE FICHIER :
-// 1. npx prisma migrate dev --name add_part_id_to_assignments
-// 2. npx prisma generate
+enum TypeCours {
+  cours
+  tp
+  projet
+}
+enum ContentStatus {
+  DRAFT
+  PENDING
+  PUBLISHED
+  ARCHIVED
+}

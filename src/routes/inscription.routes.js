@@ -1,27 +1,32 @@
 import express from 'express';
-import { 
-  inscrireFormation, 
+import {
+  inscrireFormation,
   getInscriptionsPendantes,
   getInscriptionsValidees,
   validerInscription,
+  modifierInscription,
+  supprimerInscription,
   getStatistiques,
   marquerEtudiantInactif,
-  reactiverEtudiant
- 
+  reactiverEtudiant,
 } from '../controllers/inscription.controller.js';
 
 const router = express.Router();
 
-// Route publique : inscription client
+// ── PUBLIC ──────────────────────────────────────────────────
 router.post('/inscrire', inscrireFormation);
 
-// 🔐 Routes ADMIN (à protéger plus tard avec middleware auth)
-router.get('/admin/pending', getInscriptionsPendantes);      // Toutes les inscriptions en attente
-router.get('/admin/validated', getInscriptionsValidees);     // Toutes les inscriptions validées
-router.post('/admin/valider/:id', validerInscription);       // Valider une inscription
-router.get('/admin/stats', getStatistiques);      
-// ✅ CORRECTION : Enlève le préfixe '/inscriptions' en doublon
-router.patch('/:id/marquer-inactif', marquerEtudiantInactif);
-router.patch('/:id/reactiver', reactiverEtudiant);         // Stats globales
+// ── ADMIN ───────────────────────────────────────────────────
+router.get('/admin/pending',          getInscriptionsPendantes);
+router.get('/admin/validated',        getInscriptionsValidees);
+router.get('/admin/stats',            getStatistiques);
+router.post('/admin/valider/:id',     validerInscription);
+
+// ✅ NOUVEAU
+router.put('/admin/:id',              modifierInscription);
+router.delete('/admin/:id',           supprimerInscription);
+
+router.patch('/:id/marquer-inactif',  marquerEtudiantInactif);
+router.patch('/:id/reactiver',        reactiverEtudiant);
 
 export default router;

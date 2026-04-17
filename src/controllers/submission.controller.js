@@ -13,7 +13,6 @@ class SubmissionController {
 
       console.log('📤 Soumission TD:', { partId, lessonId, moduleId, userEmail });
 
-      // Validation des données
       if (!partId || !lessonId || !moduleId || !link || !partTitle) {
         return res.status(400).json({
           success: false,
@@ -21,21 +20,16 @@ class SubmissionController {
         });
       }
 
-      // 1️⃣ Récupérer l'inscription
-      const inscription = await prisma.inscription.findUnique({
+      const inscription = await prisma.inscription.findFirst({
         where: { email: userEmail }
       });
 
       if (!inscription) {
-        return res.status(404).json({
-          success: false,
-          message: 'Inscription non trouvée'
-        });
+        console.error('❌ Aucune inscription pour email:', userEmail);
+        return res.status(404).json({ success: false, message: 'Inscription non trouvée' });
       }
-
       console.log('✅ Inscription:', inscription.id);
 
-      // 2️⃣ Vérifier la progression : la partie précédente doit être validée
       const isAccessible = await partAccessService.isPartAccessible(
         partId,
         inscription.id,
@@ -49,12 +43,8 @@ class SubmissionController {
         });
       }
 
-      // 3️⃣ Trouver ou créer l'assignment POUR CETTE PARTIE
       let assignment = await prisma.assignment.findFirst({
-        where: {
-          partId,
-          formation: inscription.formation
-        }
+        where: { partId, formation: inscription.formation }
       });
 
       if (!assignment) {
@@ -72,51 +62,31 @@ class SubmissionController {
 
       console.log('✅ Assignment:', assignment.id);
 
-      // 4️⃣ Vérifier si déjà soumis POUR CETTE PARTIE
       const existante = await prisma.submission.findFirst({
-        where: {
-          assignmentId: assignment.id,
-          inscriptionId: inscription.id
-        }
+        where: { assignmentId: assignment.id, inscriptionId: inscription.id }
       });
 
       let submission;
 
       if (existante) {
         if (existante.status === 'APPROVED') {
-          return res.status(400).json({
-            success: false,
-            message: 'Cette partie a déjà été validée'
-          });
+          return res.status(400).json({ success: false, message: 'Cette partie a déjà été validée' });
         }
-        
         if (existante.status === 'PENDING') {
           return res.status(400).json({
             success: false,
             message: 'Votre devoir pour cette partie est en cours de correction'
           });
         }
-        
-        // ✅ Si REJECTED, on UPDATE au lieu de CREATE
         if (existante.status === 'REJECTED') {
           console.log('🔄 Mise à jour de la soumission rejetée:', existante.id);
-          
           submission = await prisma.submission.update({
             where: { id: existante.id },
-            data: {
-              link,
-              status: 'PENDING',
-              feedback: null, // Reset le feedback
-              updatedAt: new Date()
-            },
-            include: {
-              assignment: true,
-              inscription: true
-            }
+            data: { link, status: 'PENDING', feedback: null, updatedAt: new Date() },
+            include: { assignment: true, inscription: true }
           });
         }
       } else {
-        // 5️⃣ Créer une nouvelle soumission
         submission = await prisma.submission.create({
           data: {
             assignmentId: assignment.id,
@@ -124,29 +94,23 @@ class SubmissionController {
             link,
             status: 'PENDING'
           },
-          include: {
-            assignment: true,
-            inscription: true
-          }
+          include: { assignment: true, inscription: true }
         });
       }
 
       console.log('✅ Soumission créée:', submission.id);
 
-      // 6️⃣ Envoyer les emails
       Promise.all([
         submissionNotificationService.confirmerSoumission(
-          inscription, 
+          inscription,
           `${lessonTitle} - ${partTitle}`
         ),
         submissionNotificationService.notifierAdminNouveauTD(
-          inscription, 
-          `${lessonTitle} - ${partTitle}`, 
+          inscription,
+          `${lessonTitle} - ${partTitle}`,
           link
         )
-      ]).catch(error => {
-        console.error('❌ Erreur envoi emails:', error);
-      });
+      ]).catch(error => console.error('❌ Erreur envoi emails:', error));
 
       res.status(201).json({
         success: true,
@@ -164,41 +128,85 @@ class SubmissionController {
 
     } catch (error) {
       console.error('❌ Erreur soumission TD:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors de la soumission',
-        error: error.message
-      });
+      res.status(500).json({ success: false, message: 'Erreur lors de la soumission', error: error.message });
     }
   }
 
   /**
-   * 📋 Récupérer les soumissions d'un étudiant (PAR PARTIE)
+   * 📤 Étudiant soumet une leçon complète
+   */
+  async soumettreLecon(req, res) {
+    try {
+      const { lessonId, link } = req.body;
+      const userEmail = req.user.email;
+
+      if (!lessonId || !link) {
+        return res.status(400).json({ success: false, message: 'lessonId et link sont obligatoires' });
+      }
+
+      const inscription = await prisma.inscription.findFirst({
+        where: { email: userEmail }
+      });
+
+      if (!inscription) {
+        return res.status(404).json({ success: false, message: 'Inscription non trouvée' });
+      }
+
+      const existante = await prisma.lessonSubmission.findFirst({
+        where: { lessonId, inscriptionId: inscription.id }
+      });
+
+      let submission;
+
+      if (existante) {
+        if (existante.status === 'APPROVED') {
+          return res.status(400).json({ success: false, message: 'Cette leçon a déjà été validée' });
+        }
+        if (existante.status === 'PENDING') {
+          return res.status(400).json({
+            success: false,
+            message: 'Votre devoir est déjà en cours de correction'
+          });
+        }
+        submission = await prisma.lessonSubmission.update({
+          where: { id: existante.id },
+          data: { link, status: 'PENDING', feedback: null }
+        });
+      } else {
+        submission = await prisma.lessonSubmission.create({
+          data: { lessonId, inscriptionId: inscription.id, link, status: 'PENDING' }
+        });
+      }
+
+      res.status(201).json({ success: true, message: 'Devoir soumis avec succès !', submission });
+
+    } catch (error) {
+      console.error('❌ soumettreLecon:', error);
+      res.status(500).json({ success: false, message: 'Erreur lors de la soumission', error: error.message });
+    }
+  }
+
+  /**
+   * 📋 Soumissions TD d'un étudiant (PAR PARTIE)
    */
   async getMesSoumissions(req, res) {
     try {
       const userEmail = req.user.email;
 
-      const inscription = await prisma.inscription.findUnique({
+      const inscription = await prisma.inscription.findFirst({
         where: { email: userEmail }
       });
 
       if (!inscription) {
-        return res.status(404).json({
-          success: false,
-          message: 'Inscription non trouvée'
-        });
+        return res.status(404).json({ success: false, message: 'Inscription non trouvée' });
       }
 
       const submissions = await prisma.submission.findMany({
         where: { inscriptionId: inscription.id },
-        include: {
-          assignment: true
-        },
+        include: { assignment: true },
         orderBy: { createdAt: 'desc' }
       });
 
-      // Formater les réponses avec partId
       const formatted = submissions.map(sub => ({
         id: sub.id,
         partId: sub.assignment.partId,
@@ -212,23 +220,171 @@ class SubmissionController {
         updatedAt: sub.updatedAt
       }));
 
-      res.json({
-        success: true,
-        count: formatted.length,
-        submissions: formatted
-      });
+      res.json({ success: true, count: formatted.length, submissions: formatted });
 
     } catch (error) {
       console.error('❌ Erreur récupération soumissions:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors de la récupération'
-      });
+      res.status(500).json({ success: false, message: 'Erreur lors de la récupération' });
     }
   }
 
   /**
-   * ✅ Admin valide un TD (validation de PARTIE)
+   * 📋 Soumissions leçons d'un étudiant
+   */
+  async getMesLessonSoumissions(req, res) {
+    try {
+      const userEmail = req.user.email;
+
+      const inscription = await prisma.inscription.findFirst({
+        where: { email: userEmail }
+      });
+
+      if (!inscription) {
+        return res.status(404).json({ success: false, message: 'Inscription non trouvée' });
+      }
+
+      const submissions = await prisma.lessonSubmission.findMany({
+        where: { inscriptionId: inscription.id },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      res.json({ success: true, count: submissions.length, submissions });
+
+    } catch (error) {
+      console.error('❌ getMesLessonSoumissions:', error);
+      res.status(500).json({ success: false, message: 'Erreur lors de la récupération' });
+    }
+  }
+
+  /**
+   * 📋 Toutes les soumissions TD (admin)
+   */
+/**
+   * 📋 Toutes les soumissions TD (admin)
+   */
+async getToutesSoumissions(req, res) {
+  try {
+    const { status, formation, cohorte } = req.query;
+    console.log('🔍 getToutesSoumissions appelée avec:', { status, formation, cohorte });
+
+    const where = {};
+    if (status) where.status = status;
+    console.log('🔍 Filtre Prisma where:', where);
+
+    const submissions = await prisma.submission.findMany({
+      where,
+      include: {
+        inscription: {
+          select: { id: true, nom: true, prenom: true, email: true, formation: true, cohorte: true }
+        },
+        assignment: {
+          select: { partId: true, lessonId: true, moduleId: true, instruction: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    console.log(`📦 Nombre de soumissions trouvées en base: ${submissions.length}`);
+
+    if (submissions.length > 0) {
+      console.log('📦 Première soumission brute:', JSON.stringify(submissions[0], null, 2));
+    } else {
+      console.log('⚠️  Aucune soumission en base — la table Submission est peut-être vide');
+    }
+
+    let filtered = submissions;
+
+    if (formation) {
+      filtered = filtered.filter(s => {
+        const match = s.inscription?.formation?.toLowerCase().includes(formation.toLowerCase());
+        console.log(`  → filtre formation sur ${s.id}: inscription=${JSON.stringify(s.inscription)}, match=${match}`);
+        return match;
+      });
+      console.log(`📦 Après filtre formation="${formation}": ${filtered.length} résultats`);
+    }
+
+    if (cohorte) {
+      filtered = filtered.filter(s => {
+        const match = s.inscription?.cohorte === parseInt(cohorte);
+        return match;
+      });
+      console.log(`📦 Après filtre cohorte="${cohorte}": ${filtered.length} résultats`);
+    }
+
+    const formatted = filtered.map(sub => {
+      if (!sub.inscription) {
+        console.warn(`⚠️  Soumission ${sub.id} n'a pas d'inscription associée (inscriptionId=${sub.inscriptionId})`);
+      }
+      if (!sub.assignment) {
+        console.warn(`⚠️  Soumission ${sub.id} n'a pas d'assignment associé (assignmentId=${sub.assignmentId})`);
+      }
+      return {
+        id: sub.id,
+        partId: sub.assignment?.partId ?? null,
+        lessonId: sub.assignment?.lessonId ?? null,
+        moduleId: sub.assignment?.moduleId ?? null,
+        partTitle: sub.assignment?.instruction ?? null,
+        lessonTitle: sub.assignment?.instruction ?? null,
+        link: sub.link,
+        status: sub.status,
+        coachFeedback: sub.feedback,
+        createdAt: sub.createdAt,
+        student: sub.inscription ?? null
+      };
+    });
+
+    console.log(`✅ Réponse envoyée: ${formatted.length} soumissions formatées`);
+    if (formatted.length > 0) {
+      console.log('✅ Première soumission formatée:', JSON.stringify(formatted[0], null, 2));
+    }
+
+    res.json({ success: true, count: formatted.length, submissions: formatted });
+
+  } catch (error) {
+    console.error('❌ Erreur récupération soumissions:', error);
+    res.status(500).json({ success: false, message: 'Erreur lors de la récupération' });
+  }
+}
+  /**
+   * 📋 Toutes les soumissions leçons (admin)
+   */
+  async getToutesLessonSoumissions(req, res) {
+    try {
+      const { status, formation, cohorte } = req.query;
+
+      const where = {};
+      if (status) where.status = status;
+
+      const submissions = await prisma.lessonSubmission.findMany({
+        where,
+        include: {
+          inscription: {
+            select: { id: true, nom: true, prenom: true, email: true, formation: true, cohorte: true }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      let filtered = submissions;
+      if (formation) {
+        filtered = filtered.filter(s =>
+          s.inscription.formation.toLowerCase().includes(formation.toLowerCase())
+        );
+      }
+      if (cohorte) {
+        filtered = filtered.filter(s => s.inscription.cohorte === parseInt(cohorte));
+      }
+
+      res.json({ success: true, count: filtered.length, submissions: filtered });
+
+    } catch (error) {
+      console.error('❌ getToutesLessonSoumissions:', error);
+      res.status(500).json({ success: false, message: 'Erreur lors de la récupération' });
+    }
+  }
+
+  /**
+   * ✅ Admin valide un TD (partie)
    */
   async validerTD(req, res) {
     try {
@@ -237,45 +393,53 @@ class SubmissionController {
 
       const submission = await prisma.submission.update({
         where: { id: parseInt(id) },
-        data: {
-          status: 'APPROVED',
-          updatedAt: new Date()
-        },
-        include: {
-          inscription: true,
-          assignment: true
-        }
+        data: { status: 'APPROVED', updatedAt: new Date() },
+        include: { inscription: true, assignment: true }
       });
 
-      // Notifier l'étudiant
-      submissionNotificationService.notifierEtudiantValidation(
-        submission.inscription,
-        partTitle || submission.assignment.instruction
-      ).catch(error => {
-        console.error('❌ Erreur envoi email validation:', error);
-      });
+      submissionNotificationService
+        .notifierEtudiantValidation(submission.inscription, partTitle || submission.assignment.instruction)
+        .catch(err => console.error('❌ Erreur envoi email validation:', err));
 
       res.json({
         success: true,
         message: 'Partie validée avec succès',
-        submission: {
-          id: submission.id,
-          partId: submission.assignment.partId,
-          status: submission.status
-        }
+        submission: { id: submission.id, partId: submission.assignment.partId, status: submission.status }
       });
 
     } catch (error) {
       console.error('❌ Erreur validation TD:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors de la validation'
-      });
+      res.status(500).json({ success: false, message: 'Erreur lors de la validation' });
     }
   }
 
   /**
-   * ❌ Admin rejette un TD
+   * ✅ Admin valide une leçon
+   */
+  async validerLessonTD(req, res) {
+    try {
+      const { id } = req.params;
+
+      const submission = await prisma.lessonSubmission.update({
+        where: { id: parseInt(id) },
+        data: { status: 'APPROVED', updatedAt: new Date() },
+        include: { inscription: true }
+      });
+
+      submissionNotificationService
+        .notifierEtudiantValidation(submission.inscription, `Leçon ${submission.lessonId}`)
+        .catch(err => console.error('❌ Email validation leçon:', err));
+
+      res.json({ success: true, message: 'Leçon validée avec succès', submission });
+
+    } catch (error) {
+      console.error('❌ validerLessonTD:', error);
+      res.status(500).json({ success: false, message: 'Erreur lors de la validation' });
+    }
+  }
+
+  /**
+   * ❌ Admin rejette un TD (partie)
    */
   async rejeterTD(req, res) {
     try {
@@ -283,33 +447,22 @@ class SubmissionController {
       const { feedback, partTitle } = req.body;
 
       if (!feedback || feedback.trim() === '') {
-        return res.status(400).json({
-          success: false,
-          message: 'Le feedback est obligatoire'
-        });
+        return res.status(400).json({ success: false, message: 'Le feedback est obligatoire' });
       }
 
       const submission = await prisma.submission.update({
         where: { id: parseInt(id) },
-        data: {
-          status: 'REJECTED',
-          feedback,
-          updatedAt: new Date()
-        },
-        include: {
-          inscription: true,
-          assignment: true
-        }
+        data: { status: 'REJECTED', feedback, updatedAt: new Date() },
+        include: { inscription: true, assignment: true }
       });
 
-      // Notifier l'étudiant
-      submissionNotificationService.notifierEtudiantRejet(
-        submission.inscription,
-        partTitle || submission.assignment.instruction,
-        feedback
-      ).catch(error => {
-        console.error('❌ Erreur envoi email rejet:', error);
-      });
+      submissionNotificationService
+        .notifierEtudiantRejet(
+          submission.inscription,
+          partTitle || submission.assignment.instruction,
+          feedback
+        )
+        .catch(err => console.error('❌ Erreur envoi email rejet:', err));
 
       res.json({
         success: true,
@@ -324,93 +477,51 @@ class SubmissionController {
 
     } catch (error) {
       console.error('❌ Erreur rejet TD:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors du rejet'
-      });
+      res.status(500).json({ success: false, message: 'Erreur lors du rejet' });
     }
   }
 
   /**
-   * 📋 Toutes les soumissions (admin)
+   * ❌ Admin rejette une leçon
    */
-  async getToutesSoumissions(req, res) {
+  async rejeterLessonTD(req, res) {
     try {
-      const { status, formation, cohorte } = req.query;
+      const { id } = req.params;
+      const { feedback } = req.body;
 
-      const where = {};
-      if (status) where.status = status;
+      if (!feedback || feedback.trim() === '') {
+        return res.status(400).json({ success: false, message: 'Le feedback est obligatoire' });
+      }
 
-      const submissions = await prisma.submission.findMany({
-        where,
-        include: {
-          inscription: {
-            select: {
-              id: true,
-              nom: true,
-              prenom: true,
-              email: true,
-              formation: true,
-              cohorte: true
-            }
-          },
-          assignment: {
-            select: {
-              partId: true,
-              lessonId: true,
-              moduleId: true,
-              instruction: true
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' }
+      const submission = await prisma.lessonSubmission.update({
+        where: { id: parseInt(id) },
+        data: { status: 'REJECTED', feedback, updatedAt: new Date() },
+        include: { inscription: true }
       });
 
-      // Filtrer
-      let filtered = submissions;
-      if (formation) {
-        filtered = filtered.filter(s => 
-          s.inscription.formation.toLowerCase().includes(formation.toLowerCase())
-        );
-      }
-      if (cohorte) {
-        filtered = filtered.filter(s => 
-          s.inscription.cohorte === parseInt(cohorte)
-        );
-      }
-
-      // Formater
-      const formatted = filtered.map(sub => ({
-        id: sub.id,
-        partId: sub.assignment.partId,
-        lessonId: sub.assignment.lessonId,
-        moduleId: sub.assignment.moduleId,
-        partTitle: sub.assignment.instruction,
-        lessonTitle: sub.assignment.instruction, // Pour compatibilité frontend
-        link: sub.link,
-        status: sub.status,
-        coachFeedback: sub.feedback,
-        createdAt: sub.createdAt,
-        student: sub.inscription
-      }));
+      submissionNotificationService
+        .notifierEtudiantRejet(submission.inscription, `Leçon ${submission.lessonId}`, feedback)
+        .catch(err => console.error('❌ Email rejet leçon:', err));
 
       res.json({
         success: true,
-        count: formatted.length,
-        submissions: formatted
+        message: 'Leçon rejetée avec feedback',
+        submission: {
+          id: submission.id,
+          lessonId: submission.lessonId,
+          status: submission.status,
+          feedback: submission.feedback
+        }
       });
 
     } catch (error) {
-      console.error('❌ Erreur récupération soumissions:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors de la récupération'
-      });
+      console.error('❌ rejeterLessonTD:', error);
+      res.status(500).json({ success: false, message: 'Erreur lors du rejet' });
     }
   }
 
   /**
-   * 📊 Statistiques
+   * 📊 Statistiques soumissions TD
    */
   async getStatistiquesSoumissions(req, res) {
     try {
@@ -440,10 +551,7 @@ class SubmissionController {
 
     } catch (error) {
       console.error('❌ Erreur statistiques:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors de la récupération des statistiques'
-      });
+      res.status(500).json({ success: false, message: 'Erreur lors de la récupération des statistiques' });
     }
   }
 }
