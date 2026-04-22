@@ -4,14 +4,13 @@ import slugify from 'slugify';
 
 // formation.service.js
 
-// ✅ extraOptions permet de passer format:'pdf' pour les brochures sans casser les images
 const uploadFile = async (buffer, folder, resourceType = 'image', extraOptions = {}) => {
   const result = await uploadToCloudinary(buffer, {
     folder,
     resource_type: resourceType,
     ...extraOptions,
   });
-  return result.secure_url; // ← string ✓
+  return result.secure_url;
 };
 
 const safeDelete = async (url, resourceType = 'image') => {
@@ -26,13 +25,6 @@ const safeDelete = async (url, resourceType = 'image') => {
 
 const formationService = {
 
-  // ============================================================
-  // CRÉER UNE FORMATION
-  // Body  : { titre, description, categorie, niveau,
-  //           nombreMois, mensualite, montantInscription,
-  //           prerequis, objectifs, programme, disponibilite }
-  // Files : { image[1], brochure[1] }
-  // ============================================================
   createFormation: async (data, files) => {
     const {
       titre, description, categorie, niveau,
@@ -44,24 +36,22 @@ const formationService = {
       throw new Error('titre, description et catégorie sont obligatoires');
     }
 
-    // Slug unique
     const baseSlug = slugify(titre, { lower: true, strict: true });
     const existing = await prisma.formation.findUnique({ where: { slug: baseSlug } });
     const slug = existing ? `${baseSlug}-${Date.now()}` : baseSlug;
 
-    // Upload image principale
     let imageUrl = null;
     if (files?.image?.[0]) {
       imageUrl = await uploadFile(files.image[0].buffer, 'tellytech/formations/images', 'image');
     }
 
-    // ✅ Upload brochure PDF — resource_type:'raw' + format:'pdf' pour forcer l'extension .pdf dans l'URL
+    // ✅ resource_type:'image' + format:'pdf' → Cloudinary sert le bon Content-Type sur mobile
     let brochureUrl = null;
     if (files?.brochure?.[0]) {
       brochureUrl = await uploadFile(
         files.brochure[0].buffer,
         'tellytech/formations/brochures',
-        'raw',
+        'image',          // ← 'image' et non 'raw' pour que mobile reçoive Content-Type: application/pdf
         { format: 'pdf' }
       );
     }
@@ -90,9 +80,6 @@ const formationService = {
     return formation;
   },
 
-  // ============================================================
-  // LISTER
-  // ============================================================
   getAllFormations: async ({ adminMode = false } = {}) => {
     return await prisma.formation.findMany({
       where: adminMode ? {} : { estActif: true },
@@ -100,9 +87,6 @@ const formationService = {
     });
   },
 
-  // ============================================================
-  // PAR ID
-  // ============================================================
   getFormationById: async (id) => {
     const formation = await prisma.formation.findUnique({
       where: { id: parseInt(id) },
@@ -111,9 +95,6 @@ const formationService = {
     return formation;
   },
 
-  // ============================================================
-  // PAR SLUG
-  // ============================================================
   getFormationBySlug: async (slug) => {
     const formation = await prisma.formation.findFirst({
       where: { slug, estActif: true },
@@ -122,26 +103,20 @@ const formationService = {
     return formation;
   },
 
-  // ============================================================
-  // METTRE À JOUR
-  // ============================================================
   updateFormation: async (id, data, files) => {
     const existing = await prisma.formation.findUnique({ where: { id: parseInt(id) } });
     if (!existing) throw new Error('Formation introuvable');
 
     const updateData = {};
 
-    // Champs texte
     ['titre', 'description', 'categorie', 'niveau',
      'prerequis', 'objectifs', 'programme', 'disponibilite'
     ].forEach(f => { if (data[f] !== undefined) updateData[f] = data[f]; });
 
-    // Champs entiers
     ['nombreMois', 'mensualite', 'montantInscription'].forEach(f => {
       if (data[f] !== undefined) updateData[f] = data[f] ? parseInt(data[f]) : null;
     });
 
-    // Nouveau slug si titre change
     if (data.titre && data.titre !== existing.titre) {
       const newSlug = slugify(data.titre, { lower: true, strict: true });
       const conflict = await prisma.formation.findFirst({
@@ -151,7 +126,6 @@ const formationService = {
       updateData.slug = newSlug;
     }
 
-    // Nouvelle image principale → supprime l'ancienne
     if (files?.image?.[0]) {
       await safeDelete(existing.imageUrl, 'image');
       updateData.imageUrl = await uploadFile(
@@ -159,13 +133,13 @@ const formationService = {
       );
     }
 
-    // ✅ Nouvelle brochure → supprime l'ancienne + force format pdf
+    // ✅ resource_type:'image' + format:'pdf' → compatible mobile
     if (files?.brochure?.[0]) {
-      await safeDelete(existing.brochureUrl, 'raw');
+      await safeDelete(existing.brochureUrl, 'image'); // ← 'image' pour matcher le type d'upload
       updateData.brochureUrl = await uploadFile(
         files.brochure[0].buffer,
         'tellytech/formations/brochures',
-        'raw',
+        'image',          // ← 'image' et non 'raw'
         { format: 'pdf' }
       );
     }
@@ -179,9 +153,6 @@ const formationService = {
     return formation;
   },
 
-  // ============================================================
-  // ACTIVER / DÉSACTIVER
-  // ============================================================
   toggleActivation: async (id) => {
     const formation = await prisma.formation.findUnique({ where: { id: parseInt(id) } });
     if (!formation) throw new Error('Formation introuvable');
@@ -198,16 +169,13 @@ const formationService = {
     };
   },
 
-  // ============================================================
-  // SUPPRIMER + nettoyage Cloudinary
-  // ============================================================
   deleteFormation: async (id) => {
     const formation = await prisma.formation.findUnique({ where: { id: parseInt(id) } });
     if (!formation) throw new Error('Formation introuvable');
 
     const cleanups = [];
     if (formation.imageUrl)    cleanups.push(safeDelete(formation.imageUrl, 'image'));
-    if (formation.brochureUrl) cleanups.push(safeDelete(formation.brochureUrl, 'raw'));
+    if (formation.brochureUrl) cleanups.push(safeDelete(formation.brochureUrl, 'image')); // ← 'image'
     await Promise.allSettled(cleanups);
 
     await prisma.formation.delete({ where: { id: parseInt(id) } });
@@ -216,9 +184,6 @@ const formationService = {
     return { message: 'Formation supprimée définitivement' };
   },
 
-  // ============================================================
-  // RECHERCHE
-  // ============================================================
   searchFormations: async (query) => {
     return await prisma.formation.findMany({
       where: {
@@ -233,9 +198,6 @@ const formationService = {
     });
   },
 
-  // ============================================================
-  // PAR CATÉGORIE
-  // ============================================================
   getFormationsByCategorie: async (categorie) => {
     return await prisma.formation.findMany({
       where: { categorie, estActif: true },
