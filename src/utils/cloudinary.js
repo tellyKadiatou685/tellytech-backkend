@@ -1,6 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
 
-
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key:    process.env.CLOUDINARY_API_KEY,
@@ -10,6 +9,7 @@ cloudinary.config({
 
 // ── Compression image ─────────────────────────────────────────
 const compressImage = async (buffer) => buffer;
+
 /**
  * Upload un buffer vers Cloudinary.
  * ✅ Retourne l'objet result COMPLET (secure_url, public_id, duration…)
@@ -20,11 +20,13 @@ const compressImage = async (buffer) => buffer;
  */
 export const uploadToCloudinary = async (fileBuffer, options = {}) => {
   const resourceType = options.resource_type || 'auto';
+  // ✅ On considère que c'est un PDF si resource_type='raw' OU format='pdf'
+  const isPDF = resourceType === 'raw' || options.format === 'pdf';
 
   let bufferToUpload = fileBuffer;
 
-  // Compression uniquement pour les images (pas vidéo, pas pdf/raw)
-  if (resourceType === 'image' && options.format !== 'pdf') {
+  // Compression uniquement pour les vraies images (pas PDF, pas raw, pas vidéo)
+  if (!isPDF && resourceType === 'image') {
     try {
       bufferToUpload = await compressImage(fileBuffer);
       const before = (fileBuffer.length / 1024).toFixed(0);
@@ -42,8 +44,8 @@ export const uploadToCloudinary = async (fileBuffer, options = {}) => {
         timeout: 120000,
         // Options Cloudinary passées en paramètre
         ...options,
-        // Optimisation auto pour les vraies images (pas PDF)
-        ...(resourceType === 'image' && options.format !== 'pdf' && {
+        // ✅ Optimisation auto UNIQUEMENT pour les vraies images (jamais pour les PDF/raw)
+        ...(!isPDF && resourceType === 'image' && {
           quality:      'auto:good',
           fetch_format: 'auto',
         }),

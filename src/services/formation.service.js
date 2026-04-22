@@ -4,14 +4,16 @@ import slugify from 'slugify';
 
 // formation.service.js
 
-// ✅ Nouvelle signature avec options objet + extraction secure_url
-const uploadFile = async (buffer, folder, resourceType = 'image') => {
+// ✅ extraOptions permet de passer format:'pdf' pour les brochures sans casser les images
+const uploadFile = async (buffer, folder, resourceType = 'image', extraOptions = {}) => {
   const result = await uploadToCloudinary(buffer, {
     folder,
     resource_type: resourceType,
+    ...extraOptions,
   });
   return result.secure_url; // ← string ✓
 };
+
 const safeDelete = async (url, resourceType = 'image') => {
   try {
     if (!url) return;
@@ -53,10 +55,15 @@ const formationService = {
       imageUrl = await uploadFile(files.image[0].buffer, 'tellytech/formations/images', 'image');
     }
 
-    // Upload brochure PDF
+    // ✅ Upload brochure PDF — resource_type:'raw' + format:'pdf' pour forcer l'extension .pdf dans l'URL
     let brochureUrl = null;
     if (files?.brochure?.[0]) {
-      brochureUrl = await uploadFile(files.brochure[0].buffer, 'tellytech/formations/brochures', 'raw');
+      brochureUrl = await uploadFile(
+        files.brochure[0].buffer,
+        'tellytech/formations/brochures',
+        'raw',
+        { format: 'pdf' }
+      );
     }
 
     const formation = await prisma.formation.create({
@@ -152,11 +159,14 @@ const formationService = {
       );
     }
 
-    // Nouvelle brochure → supprime l'ancienne
+    // ✅ Nouvelle brochure → supprime l'ancienne + force format pdf
     if (files?.brochure?.[0]) {
       await safeDelete(existing.brochureUrl, 'raw');
       updateData.brochureUrl = await uploadFile(
-        files.brochure[0].buffer, 'tellytech/formations/brochures', 'raw'
+        files.brochure[0].buffer,
+        'tellytech/formations/brochures',
+        'raw',
+        { format: 'pdf' }
       );
     }
 
