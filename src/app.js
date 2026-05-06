@@ -25,7 +25,8 @@ app.use(cors({
     'http://localhost:4173',
     'https://telly-tech.com',      // ← ajoutez cette ligne
     'https://www.telly-tech.com',  
-    'https://tellytech-backkend.vercel.app'
+    'https://tellytech-backkend.vercel.app',
+      'https://sparkling-glade-3839.pages.dev'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
