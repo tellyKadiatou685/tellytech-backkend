@@ -1,3 +1,5 @@
+import { Readable } from 'stream';
+import { v2 as cloudinary } from 'cloudinary';
 import { uploadToCloudinary, deleteFromCloudinary, extractPublicId } from '../utils/cloudinary.js';
 
 class UploadService {
@@ -10,27 +12,58 @@ class UploadService {
     return typeof url === 'string' && /youtube\.com|youtu\.be/.test(url);
   }
 
-  async uploadVideo(file, formation = 'general') {
-    // Lien YouTube → stockage direct, pas d'upload Cloudinary
-    if (typeof file === 'string' && this.isYouTubeUrl(file)) {
-      return { type: 'youtube', url: file, publicId: null };
+  async uploadVideo(videoFileOrUrl, formation) {
+
+    // ── YouTube → stockage direct, pas de Cloudinary ──────────
+    if (typeof videoFileOrUrl === 'string') {
+      const youtubeMatch = videoFileOrUrl.match(
+        /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbedded)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/
+      );
+      if (youtubeMatch) {
+        return { type: 'youtube', url: videoFileOrUrl, publicId: null };
+      }
     }
 
-    // Fichier vidéo → upload Cloudinary
-    const result = await uploadToCloudinary(file.buffer, {
-      folder:        `tellytech/videos/${formation}`,
-      resource_type: 'video',
-      transformation: [
-        { quality: 'auto:good', fetch_format: 'mp4' },
-      ],
-    });
+    // ── Fichier vidéo → Cloudinary v2 (upload_stream) ─────────
+    try {
+      const folder = `tellytech/videos/${formation}`;
 
-    return {
-      type:     'cloudinary',
-      url:      result.secure_url,   // ✅ result est l'objet complet
-      publicId: result.public_id,
-      duration: result.duration ?? null,
-    };
+      // Récupère le buffer (multer memoryStorage)
+      const buffer = videoFileOrUrl.buffer ?? videoFileOrUrl;
+      if (!Buffer.isBuffer(buffer)) {
+        throw new Error('Fichier vidéo invalide : buffer introuvable.');
+      }
+
+      const result = await new Promise((resolve, reject) => {
+        // upload_stream = méthode v2 pour streamer un buffer vers Cloudinary
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            resource_type: 'video',
+            folder,
+            // eager_async évite le timeout "too large to process synchronously"
+            eager:       [{ format: 'mp4', quality: 'auto' }],
+            eager_async: true,
+            chunk_size:  6_000_000, // chunks de 6 Mo — recommandé pour les grandes vidéos
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+
+        Readable.from(buffer).pipe(uploadStream);
+      });
+
+      return {
+        type:     'cloudinary',
+        url:      result.secure_url,
+        publicId: result.public_id,
+      };
+
+    } catch (err) {
+      console.error('❌ Erreur upload Cloudinary vidéo:', err);
+      throw err;
+    }
   }
 
   // ========================================
@@ -40,10 +73,10 @@ class UploadService {
   async uploadPdf(file, formation = 'general') {
     const result = await uploadToCloudinary(file.buffer, {
       folder:        `tellytech/pdfs/${formation}`,
-      resource_type: 'raw',  // ← changer image → raw
+      resource_type: 'raw',
       type:          'upload',
     });
-  
+
     return {
       url:      result.secure_url,
       publicId: result.public_id,
@@ -120,7 +153,7 @@ class UploadService {
 
   async deletePdf(url) {
     if (!url) return;
-    await this.deleteFile(url, 'raw'); // ← 'image' → 'raw'
+    await this.deleteFile(url, 'raw');
   }
 }
 
