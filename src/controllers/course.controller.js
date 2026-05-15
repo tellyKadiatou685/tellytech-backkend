@@ -41,20 +41,23 @@ class CourseController {
   // ── LEÇONS ────────────────────────────────────────────────
   async creerLecon(req, res) {
     try {
-      const { moduleId, titre, ordre, description, duree, videoUrl, consigneExo, requiresPreviousValidation } = req.body;
+      const {
+        moduleId, titre, ordre, description, duree,
+        videoUrl, consigneExo, requiresPreviousValidation,
+      } = req.body;
 
       if (!moduleId || !titre || ordre === undefined) {
         return res.status(400).json({ success: false, message: 'moduleId, titre et ordre sont obligatoires' });
       }
 
-      // Récupérer la formation depuis le module
       const module = await prisma.courseModule.findUnique({ where: { id: moduleId } });
       if (!module) {
         return res.status(404).json({ success: false, message: 'Module introuvable' });
       }
 
-      const videoFile = req.files?.video?.[0] || null;
-      const pdfFile   = req.files?.pdf?.[0]   || null;
+      const videoFile  = req.files?.video?.[0]  || null;
+      const pdfFile    = req.files?.pdf?.[0]    || null;
+      const pdfExoFile = req.files?.pdfExo?.[0] || null;   // ← PDF exo
 
       const lecon = await courseService.creerLecon({
         moduleId, titre, ordre, description, duree,
@@ -62,6 +65,7 @@ class CourseController {
         formation: module.formation,
         videoFile,
         pdfFile,
+        pdfExoFile,   // ← PDF exo
       });
 
       res.status(201).json({ success: true, message: 'Leçon créée', lecon });
@@ -73,10 +77,17 @@ class CourseController {
 
   async modifierLecon(req, res) {
     try {
-      const videoFile = req.files?.video?.[0] || null;
-      const pdfFile   = req.files?.pdf?.[0]   || null;
+      const videoFile  = req.files?.video?.[0]  || null;
+      const pdfFile    = req.files?.pdf?.[0]    || null;
+      const pdfExoFile = req.files?.pdfExo?.[0] || null;   // ← PDF exo
 
-      const lecon = await courseService.modifierLecon(req.params.id, req.body, videoFile, pdfFile);
+      const lecon = await courseService.modifierLecon(
+        req.params.id,
+        req.body,
+        videoFile,
+        pdfFile,
+        pdfExoFile,   // ← PDF exo
+      );
       res.json({ success: true, message: 'Leçon modifiée', lecon });
     } catch (error) {
       console.error('❌ modifierLecon:', error);
@@ -90,6 +101,44 @@ class CourseController {
       res.json({ success: true, message: 'Leçon supprimée' });
     } catch (error) {
       console.error('❌ supprimerLecon:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // ── SOUMISSIONS ÉTUDIANTS ─────────────────────────────────
+  async soumettre(req, res) {
+    try {
+      const { lessonId, link } = req.body;
+      const inscriptionId      = req.user.inscriptionId;
+      const uploadFile         = req.file || null;   // fichier Multer (single)
+
+      if (!lessonId) {
+        return res.status(400).json({ success: false, message: 'lessonId est obligatoire' });
+      }
+      if (!link && !uploadFile) {
+        return res.status(400).json({ success: false, message: 'Fournir un lien ou un fichier' });
+      }
+
+      // Récupérer le slug formation depuis la leçon (pour dossier Cloudinary)
+      const lecon = await prisma.courseLesson.findUnique({
+        where:   { id: lessonId },
+        include: { module: true },
+      });
+      if (!lecon) {
+        return res.status(404).json({ success: false, message: 'Leçon introuvable' });
+      }
+
+      const submission = await courseService.soumettreLessonSubmission({
+        lessonId,
+        inscriptionId,
+        link:       link || null,
+        uploadFile,
+        formation:  lecon.module.formation,
+      });
+
+      res.status(201).json({ success: true, message: 'Devoir soumis', submission });
+    } catch (error) {
+      console.error('❌ soumettre:', error);
       res.status(500).json({ success: false, message: error.message });
     }
   }

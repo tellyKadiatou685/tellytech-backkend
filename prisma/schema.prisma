@@ -7,34 +7,26 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================
-// 🏫 FORMATIONS (catalogue public)
-// ============================================================
-
 model Formation {
   id                 Int      @id @default(autoincrement())
   titre              String
   slug               String   @unique
   description        String
-  categorie          String
-  niveau             String   @default("Débutant")
-  nombreMois         Int?
-  mensualite         Int?
-  montantInscription Int?
-  prerequis          String?
-  objectifs          String?
   programme          String?
+  mensualite         Int?
+  nombreMois         Int?
   imageUrl           String?
   brochureUrl        String?
-  disponibilite      String   @default("Actuellement disponible")
-  estActif           Boolean  @default(true)
+  categorie          String
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  disponibilite      String   @default("Actuellement disponible")
+  estActif           Boolean  @default(true)
+  montantInscription Int?
+  niveau             String   @default("Débutant")
+  objectifs          String?
+  prerequis          String?
 }
-
-// ============================================================
-// 📩 MESSAGES (formulaire de contact)
-// ============================================================
 
 model Message {
   id        Int      @id @default(autoincrement())
@@ -48,10 +40,6 @@ model Message {
   createdAt DateTime @default(now())
 }
 
-// ============================================================
-// 🎓 INSCRIPTIONS & PAIEMENTS
-// ============================================================
-
 model Inscription {
   id                 Int                @id @default(autoincrement())
   nom                String
@@ -59,7 +47,6 @@ model Inscription {
   email              String             @unique
   telephone          String
   formation          String
-
   montantInscription Int                @default(30000)
   mensualite         Int?
   nombreMois         Int?
@@ -68,23 +55,17 @@ model Inscription {
   dateFinFormation   DateTime?
   status             Status             @default(PENDING)
   code               String?            @unique
-
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
-
-  // Relations
-  paiements          Paiement[]
+  devoirSoumissions  DevoirSubmission[]
   lessonSubmissions  LessonSubmission[]
-
-  // Anciennes relations (compatibilité — à migrer progressivement)
+  paiements          Paiement[]
   submissions        Submission[]
-  devoirSoumissions    DevoirSubmission[]  // ✅ ça
 }
 
 model Paiement {
   id             Int            @id @default(autoincrement())
   inscriptionId  Int
-  inscription    Inscription    @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
   mois           Int
   montant        Int
   status         StatusPaiement @default(EN_ATTENTE)
@@ -92,23 +73,20 @@ model Paiement {
   recuUrl        String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  inscription    Inscription    @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
 }
-
-// ============================================================
-// 📚 COURS (modules & leçons — géré par admin/coach)
-// ============================================================
 
 model CourseModule {
   id          String         @id @default(cuid())
-  formation   String         // slug de la formation ex: "dev-web"
+  formation   String
   titre       String
   ordre       Int
-  description String         @db.Text
-  duree       String         // ex: "8h"
+  description String
+  duree       String
   objectifs   String[]
-  lessons     CourseLesson[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
+  lessons     CourseLesson[]
 
   @@index([formation])
   @@index([formation, ordre])
@@ -117,65 +95,50 @@ model CourseModule {
 model CourseLesson {
   id                         String             @id @default(cuid())
   moduleId                   String
-  module                     CourseModule       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   titre                      String
   ordre                      Int
-  description                String             @db.Text
-  duree                      String             // ex: "2h"
-
-  // Contenu
-  videoUrl                   String?            // URL YouTube OU URL Cloudinary
-  videoType                  String?            // "youtube" | "cloudinary"
-  videoPublicId              String?            // Public ID Cloudinary (pour suppression)
-  pdfUrl                     String?            // URL Cloudinary du PDF (cours + exos)
-  pdfPublicId                String?            // Public ID Cloudinary (pour suppression)
-  consigneExo                String?            @db.Text // Instructions de l'exercice
-
-  // Verrouillage séquentiel
+  description                String
+  duree                      String
+  videoUrl                   String?
+  videoType                  String?
+  videoPublicId              String?
+  pdfUrl                     String?
+  pdfPublicId                String?
+  pdfExoUrl                  String?            // ← NOUVEAU : PDF exercice
+  pdfExoPublicId             String?            // ← NOUVEAU : PDF exercice
+  consigneExo                String?
   requiresPreviousValidation Boolean            @default(true)
-
-  submissions                LessonSubmission[]
   createdAt                  DateTime           @default(now())
   updatedAt                  DateTime           @updatedAt
-
+  module                     CourseModule       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  submissions                LessonSubmission[]
+   hasEditor   Boolean @default(false)
+  starterCode String?
   @@index([moduleId])
   @@index([moduleId, ordre])
 }
 
-// ============================================================
-// 📤 SOUMISSIONS ÉTUDIANTS (nouvelle architecture)
-// ============================================================
-
 model LessonSubmission {
   id            Int              @id @default(autoincrement())
   lessonId      String
-  lesson        CourseLesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   inscriptionId Int
-  inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
-
-  // Soumission : lien OU fichier uploadé
-  link          String?          // GitHub, Google Drive, etc.
-  fileUrl       String?          // URL Cloudinary du fichier soumis
-  filePublicId  String?          // Public ID Cloudinary (pour suppression)
-  fileName      String?          // Nom original du fichier
-
-  // Correction
-  note          Int?             // /20, null avant correction
-  feedback      String?          // Commentaire du coach/admin
+  link          String?
+  fileUrl       String?
+  filePublicId  String?
+  fileName      String?
+  note          Int?
+  feedback      String?
   status        SubmissionStatus @default(PENDING)
-
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
+  lesson        CourseLesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
   @@unique([lessonId, inscriptionId])
   @@index([inscriptionId])
   @@index([lessonId])
   @@index([status])
 }
-
-// ============================================================
-// 🗂️ ANCIENNES TABLES SUBMISSIONS (compatibilité)
-// ============================================================
 
 model Assignment {
   id          Int          @id @default(autoincrement())
@@ -184,8 +147,8 @@ model Assignment {
   moduleId    String
   formation   String
   instruction String
-  submissions Submission[]
   createdAt   DateTime     @default(now())
+  submissions Submission[]
 
   @@unique([partId, formation])
   @@index([lessonId, moduleId])
@@ -194,24 +157,20 @@ model Assignment {
 model Submission {
   id            Int              @id @default(autoincrement())
   assignmentId  Int
-  assignment    Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   inscriptionId Int
-  inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
   link          String
   status        SubmissionStatus @default(PENDING)
   feedback      String?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  assignment    Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
 
   @@unique([inscriptionId, assignmentId])
   @@index([inscriptionId])
   @@index([assignmentId])
   @@index([status])
 }
-
-// ============================================================
-// 🗞️ CONTENU ÉDITORIAL
-// ============================================================
 
 model Evenement {
   id          Int       @id @default(autoincrement())
@@ -220,9 +179,9 @@ model Evenement {
   description String
   date        DateTime
   imageUrl    String?
-  gallery     Galerie[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  gallery     Galerie[]
 }
 
 model Galerie {
@@ -251,10 +210,6 @@ model Service {
   updatedAt   DateTime @updatedAt
 }
 
-// ============================================================
-// 👤 UTILISATEURS
-// ============================================================
-
 model User {
   id        Int      @id @default(autoincrement())
   nom       String
@@ -266,26 +221,21 @@ model User {
   createdAt DateTime @default(now())
 }
 
-// ============================================================
-// 📝 DEVOIRS (programmés par l'admin)
-// ============================================================
-
 model Devoir {
-  id             Int                @id @default(autoincrement())
-  titre          String
-  consigne       String             @db.Text
-  fichierUrl     String?            // PDF énoncé (Cloudinary)
-  fichierPublicId String?           // Public ID Cloudinary (pour suppression)
-  formation      String             // slug ex: "dev-web"
-  cohorte        Int?               // null = toutes les cohortes
-  ouvertureAt    DateTime           // quand le devoir devient visible
-  deadline       DateTime           // date limite de rendu
-  dureeMinutes   Int                // durée en minutes ex: 120
-  actif          Boolean            @default(true)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-
-  soumissions    DevoirSubmission[]
+  id              Int                @id @default(autoincrement())
+  titre           String
+  consigne        String
+  fichierUrl      String?
+  fichierPublicId String?
+  formation       String
+  cohorte         Int?
+  ouvertureAt     DateTime
+  deadline        DateTime
+  dureeMinutes    Int
+  actif           Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  soumissions     DevoirSubmission[]
 
   @@index([formation])
   @@index([formation, cohorte])
@@ -293,56 +243,44 @@ model Devoir {
 }
 
 model DevoirSubmission {
-  id            Int              @id @default(autoincrement())
-  devoirId      Int
-  devoir        Devoir           @relation(fields: [devoirId], references: [id], onDelete: Cascade)
-  inscriptionId Int
-  inscription   Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
-appreciation  String?   // "Excellent" | "Bien" | "Assez bien" | "Passable" | "Insuffisant"
-  // Rendu étudiant
-  fichierUrl    String?          // URL Cloudinary du fichier rendu
-  fichierPublicId String?        // Public ID Cloudinary (pour suppression)
-  fileName      String?          // Nom original du fichier
+  id              Int              @id @default(autoincrement())
+  devoirId        Int
+  inscriptionId   Int
+  fichierUrl      String?
+  fichierPublicId String?
+  fileName        String?
+  note            Int?
+  feedback        String?
+  status          SubmissionStatus @default(PENDING)
+  soumisAt        DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  appreciation    String?
+  devoir          Devoir           @relation(fields: [devoirId], references: [id], onDelete: Cascade)
+  inscription     Inscription      @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
 
-  // Correction admin/coach
-  note          Int?             // /20, null avant correction
-  feedback      String?          @db.Text
-  status        SubmissionStatus @default(PENDING)
-
-  soumisAt      DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-
-  @@unique([devoirId, inscriptionId])   // un seul rendu par étudiant par devoir
+  @@unique([devoirId, inscriptionId])
   @@index([devoirId])
   @@index([inscriptionId])
   @@index([status])
 }
 
-
 model EmploiDuTemps {
-  id        Int      @id @default(autoincrement())
-  formation String   // slug de la formation ex: "dev-web"
-  cohorte   String   // ex: "Cohorte 1", "Cohorte 2"
-  jour      Jour
-  heureDebut String  // ex: "08:00"
-  heureFin  String   // ex: "10:00"
-  matiere   String   // ex: "JavaScript Avancé"
-  type      TypeCours
-  salle     String?  // optionnel
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         Int       @id @default(autoincrement())
+  formation  String
+  cohorte    String
+  jour       Jour
+  heureDebut String
+  heureFin   String
+  matiere    String
+  type       TypeCours
+  salle      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([formation])
   @@index([formation, cohorte])
   @@index([formation, jour])
 }
-
-// Ajoute aussi ces enums dans la section enums du schema.prisma
-
-
-// ============================================================
-// 🔢 ENUMS
-// ============================================================
 
 enum SubmissionStatus {
   PENDING
@@ -366,6 +304,7 @@ enum Role {
   USER
   COACH
 }
+
 enum Jour {
   Lundi
   Mardi
@@ -380,6 +319,7 @@ enum TypeCours {
   tp
   projet
 }
+
 enum ContentStatus {
   DRAFT
   PENDING
