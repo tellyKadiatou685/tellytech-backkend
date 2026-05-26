@@ -1,176 +1,312 @@
 import prisma from '../config/database.js';
-import courseService from '../services/course.service.js';
+import uploadService from './upload.service.js';
 
-class CourseController {
+class CourseService {
 
-  // ── MODULES ──────────────────────────────────────────────
-  async creerModule(req, res) {
-    try {
-      const { formation, titre, ordre, description, duree, objectifs } = req.body;
-      if (!formation || !titre || ordre === undefined) {
-        return res.status(400).json({ success: false, message: 'formation, titre et ordre sont obligatoires' });
-      }
-      const module = await courseService.creerModule({ formation, titre, ordre, description, duree, objectifs });
-      res.status(201).json({ success: true, message: 'Module créé', module });
-    } catch (error) {
-      console.error('❌ creerModule:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
+  async creerModule({ formation, titre, ordre, description, duree, objectifs }) {
+    return prisma.courseModule.create({
+      data: {
+        formation,
+        titre,
+        ordre: parseInt(ordre),
+        description: description || '',
+        duree: duree || '',
+        objectifs: Array.isArray(objectifs) ? objectifs : [],
+      },
+      include: { lessons: { orderBy: { ordre: 'asc' } } }
+    });
   }
 
-  async modifierModule(req, res) {
-    try {
-      const module = await courseService.modifierModule(req.params.id, req.body);
-      res.json({ success: true, message: 'Module modifié', module });
-    } catch (error) {
-      console.error('❌ modifierModule:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
+  async modifierModule(id, data) {
+    return prisma.courseModule.update({
+      where: { id },
+      data: {
+        ...(data.titre && { titre: data.titre }),
+        ...(data.ordre !== undefined && { ordre: parseInt(data.ordre) }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.duree && { duree: data.duree }),
+        ...(data.objectifs && { objectifs: Array.isArray(data.objectifs) ? data.objectifs : [] }),
+      },
+      include: { lessons: { orderBy: { ordre: 'asc' } } }
+    });
   }
 
-  async supprimerModule(req, res) {
-    try {
-      await courseService.supprimerModule(req.params.id);
-      res.json({ success: true, message: 'Module supprimé' });
-    } catch (error) {
-      console.error('❌ supprimerModule:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
+  async supprimerModule(id) {
+    const lecons = await prisma.courseLesson.findMany({
+      where: { moduleId: id },
+      select: { videoUrl: true, videoType: true, pdfUrl: true, pdfExoUrl: true }
+    });
+
+    await Promise.all(
+      lecons.flatMap(l => [
+        uploadService.deleteVideo(l.videoUrl),
+        uploadService.deletePdf(l.pdfUrl),
+        uploadService.deletePdf(l.pdfExoUrl),
+      ])
+    );
+
+    return prisma.courseModule.delete({ where: { id } });
   }
 
-  // ── LEÇONS ────────────────────────────────────────────────
-  async creerLecon(req, res) {
-    try {
-      const {
-        moduleId, titre, ordre, description, duree,
-        videoUrl, consigneExo, requiresPreviousValidation,
-      } = req.body;
-
-      if (!moduleId || !titre || ordre === undefined) {
-        return res.status(400).json({ success: false, message: 'moduleId, titre et ordre sont obligatoires' });
-      }
-
-      const module = await prisma.courseModule.findUnique({ where: { id: moduleId } });
-      if (!module) {
-        return res.status(404).json({ success: false, message: 'Module introuvable' });
-      }
-
-      const videoFile  = req.files?.video?.[0]  || null;
-      const pdfFile    = req.files?.pdf?.[0]    || null;
-      const pdfExoFile = req.files?.pdfExo?.[0] || null;   // ← PDF exo
-
-      const lecon = await courseService.creerLecon({
-        moduleId, titre, ordre, description, duree,
-        videoUrl, consigneExo, requiresPreviousValidation,
-        formation: module.formation,
-        videoFile,
-        pdfFile,
-        pdfExoFile,   // ← PDF exo
-      });
-
-      res.status(201).json({ success: true, message: 'Leçon créée', lecon });
-    } catch (error) {
-      console.error('❌ creerLecon:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
+  async getModulesByFormation(formation) {
+    return prisma.courseModule.findMany({
+      where: { formation },
+      orderBy: { ordre: 'asc' },
+      include: { lessons: { orderBy: { ordre: 'asc' } } }
+    });
   }
 
-  async modifierLecon(req, res) {
-    try {
-      const videoFile  = req.files?.video?.[0]  || null;
-      const pdfFile    = req.files?.pdf?.[0]    || null;
-      const pdfExoFile = req.files?.pdfExo?.[0] || null;   // ← PDF exo
+  async creerLecon({
+    moduleId, titre, ordre, description, duree,
+    videoUrl, consigneExo, requiresPreviousValidation,
+    videoFile, pdfFile, pdfExoFile, formation,
+  }) {
 
-      const lecon = await courseService.modifierLecon(
-        req.params.id,
-        req.body,
-        videoFile,
-        pdfFile,
-        pdfExoFile,   // ← PDF exo
-      );
-      res.json({ success: true, message: 'Leçon modifiée', lecon });
-    } catch (error) {
-      console.error('❌ modifierLecon:', error);
-      res.status(500).json({ success: false, message: error.message });
+    let videoData = { type: null, url: null, publicId: null };
+    if (videoFile) {
+      videoData = await uploadService.uploadVideo(videoFile, formation);
+    } else if (videoUrl && videoUrl.trim()) {
+      videoData = await uploadService.uploadVideo(videoUrl.trim(), formation);
     }
+
+    let pdfData = { url: null, publicId: null };
+    if (pdfFile) {
+      pdfData = await uploadService.uploadPdf(pdfFile, formation);
+    }
+
+    let pdfExoData = { url: null, publicId: null };
+    if (pdfExoFile) {
+      console.log('📝 Upload du PDF exo reçu dans le service');
+      pdfExoData = await uploadService.uploadPdf(pdfExoFile, formation);
+    }
+
+    return prisma.courseLesson.create({
+      data: {
+        moduleId,
+        titre,
+        ordre: parseInt(ordre),
+        description: description || '',
+        duree: duree || '',
+        videoUrl: videoData.url,
+        videoType: videoData.type,
+        videoPublicId: videoData.publicId,
+        pdfUrl: pdfData.url,
+        pdfPublicId: pdfData.publicId,
+        pdfExoUrl: pdfExoData.url,
+        pdfExoPublicId: pdfExoData.publicId,
+        consigneExo: consigneExo || null,
+        requiresPreviousValidation: requiresPreviousValidation !== false && requiresPreviousValidation !== 'false',
+      },
+      include: { module: true }
+    });
   }
 
-  async supprimerLecon(req, res) {
-    try {
-      await courseService.supprimerLecon(req.params.id);
-      res.json({ success: true, message: 'Leçon supprimée' });
-    } catch (error) {
-      console.error('❌ supprimerLecon:', error);
-      res.status(500).json({ success: false, message: error.message });
+  async modifierLecon(id, data, videoFile, pdfFile, pdfExoFile) {
+    const leconActuelle = await prisma.courseLesson.findUnique({
+      where: { id },
+      include: { module: true },
+    });
+    if (!leconActuelle) throw new Error('Leçon introuvable');
+
+    const formation = leconActuelle.module?.formation || 'general';
+
+    let videoUpdate = {};
+    if (videoFile) {
+      await uploadService.deleteVideo(leconActuelle.videoUrl);
+      const videoData = await uploadService.uploadVideo(videoFile, formation);
+      videoUpdate = {
+        videoUrl: videoData.url,
+        videoType: videoData.type,
+        videoPublicId: videoData.publicId,
+      };
+    } else if (data.videoUrl && data.videoUrl.trim()) {
+      await uploadService.deleteVideo(leconActuelle.videoUrl);
+      const videoData = await uploadService.uploadVideo(data.videoUrl.trim(), formation);
+      videoUpdate = {
+        videoUrl: videoData.url,
+        videoType: videoData.type,
+        videoPublicId: videoData.publicId,
+      };
+    } else if (data.videoUrl === '') {
+      await uploadService.deleteVideo(leconActuelle.videoUrl);
+      videoUpdate = { videoUrl: null, videoType: null, videoPublicId: null };
     }
+
+    let pdfUpdate = {};
+    if (pdfFile) {
+      await uploadService.deletePdf(leconActuelle.pdfUrl);
+      const pdfData = await uploadService.uploadPdf(pdfFile, formation);
+      pdfUpdate = { pdfUrl: pdfData.url, pdfPublicId: pdfData.publicId };
+    } else if (data.pdfUrl === '') {
+      await uploadService.deletePdf(leconActuelle.pdfUrl);
+      pdfUpdate = { pdfUrl: null, pdfPublicId: null };
+    }
+
+    let pdfExoUpdate = {};
+    if (pdfExoFile) {
+      await uploadService.deletePdf(leconActuelle.pdfExoUrl);
+      const pdfExoData = await uploadService.uploadPdf(pdfExoFile, formation);
+      pdfExoUpdate = { pdfExoUrl: pdfExoData.url, pdfExoPublicId: pdfExoData.publicId };
+    } else if (data.pdfExoUrl === '') {
+      await uploadService.deletePdf(leconActuelle.pdfExoUrl);
+      pdfExoUpdate = { pdfExoUrl: null, pdfExoPublicId: null };
+    }
+
+    return prisma.courseLesson.update({
+      where: { id },
+      data: {
+        ...(data.titre && { titre: data.titre }),
+        ...(data.ordre !== undefined && { ordre: parseInt(data.ordre) }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.duree && { duree: data.duree }),
+        ...(data.consigneExo !== undefined && { consigneExo: data.consigneExo || null }),
+        ...(data.requiresPreviousValidation !== undefined && {
+          requiresPreviousValidation: data.requiresPreviousValidation !== false && data.requiresPreviousValidation !== 'false',
+        }),
+        ...videoUpdate,
+        ...pdfUpdate,
+        ...pdfExoUpdate,
+      },
+      include: { module: true }
+    });
   }
 
-  // ── SOUMISSIONS ÉTUDIANTS ─────────────────────────────────
-  async soumettre(req, res) {
-    try {
-      const { lessonId, link } = req.body;
-      const inscriptionId      = req.user.inscriptionId;
-      const uploadFile         = req.file || null;   // fichier Multer (single)
+  async supprimerLecon(id) {
+    const lecon = await prisma.courseLesson.findUnique({ where: { id } });
+    if (!lecon) throw new Error('Leçon introuvable');
 
-      if (!lessonId) {
-        return res.status(400).json({ success: false, message: 'lessonId est obligatoire' });
-      }
-      if (!link && !uploadFile) {
-        return res.status(400).json({ success: false, message: 'Fournir un lien ou un fichier' });
-      }
+    await Promise.all([
+      uploadService.deleteVideo(lecon.videoUrl),
+      uploadService.deletePdf(lecon.pdfUrl),
+      uploadService.deletePdf(lecon.pdfExoUrl),
+    ]);
 
-      // Récupérer le slug formation depuis la leçon (pour dossier Cloudinary)
-      const lecon = await prisma.courseLesson.findUnique({
-        where:   { id: lessonId },
-        include: { module: true },
-      });
-      if (!lecon) {
-        return res.status(404).json({ success: false, message: 'Leçon introuvable' });
-      }
+    return prisma.courseLesson.delete({ where: { id } });
+  }
 
-      const submission = await courseService.soumettreLessonSubmission({
+  async soumettreLessonSubmission({ lessonId, inscriptionId, link, uploadFile, formation }) {
+    if (!link && !uploadFile) {
+      throw new Error('Veuillez fournir un lien ou un fichier.');
+    }
+
+    let fileData = { url: null, publicId: null, name: null };
+    if (uploadFile) {
+      const uploaded = await uploadService.uploadPdf(uploadFile, formation);
+      fileData = {
+        url: uploaded.url,
+        publicId: uploaded.publicId,
+        name: uploadFile.originalname || uploadFile.name || null,
+      };
+    }
+
+    return prisma.lessonSubmission.upsert({
+      where: {
+        lessonId_inscriptionId: { lessonId, inscriptionId },
+      },
+      create: {
         lessonId,
         inscriptionId,
-        link:       link || null,
-        uploadFile,
-        formation:  lecon.module.formation,
-      });
-
-      res.status(201).json({ success: true, message: 'Devoir soumis', submission });
-    } catch (error) {
-      console.error('❌ soumettre:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
+        link: link || null,
+        fileUrl: fileData.url,
+        filePublicId: fileData.publicId,
+        fileName: fileData.name,
+        status: 'PENDING',
+      },
+      update: {
+        link: link || null,
+        fileUrl: fileData.url,
+        filePublicId: fileData.publicId,
+        fileName: fileData.name,
+        status: 'PENDING',
+        feedback: null,
+        note: null,
+      },
+    });
   }
 
-  // ── LECTURE ───────────────────────────────────────────────
-  async getCoursAvecProgression(req, res) {
-    try {
-      const { formation } = req.params;
-      const inscriptionId = req.user.inscriptionId;
+  async corrigerLessonSubmission(submissionId, { note, feedback, status }) {
+    return prisma.lessonSubmission.update({
+      where: { id: submissionId },
+      data: {
+        ...(note !== undefined && { note: parseInt(note) }),
+        ...(feedback !== undefined && { feedback }),
+        ...(status && { status }),
+      },
+      include: { lesson: true, inscription: true },
+    });
+  }
 
-      const modules = await courseService.getCoursAvecProgression(formation, inscriptionId);
-
-      if (!modules.length) {
-        return res.status(404).json({ success: false, message: 'Aucun cours trouvé' });
+  async getCoursAvecProgression(formation, inscriptionId) {
+    const modules = await prisma.courseModule.findMany({
+      where: { formation },
+      orderBy: { ordre: 'asc' },
+      include: {
+        lessons: {
+          orderBy: { ordre: 'asc' },
+          include: {
+            submissions: {
+              where: { inscriptionId },
+              select: {
+                id: true, status: true, note: true,
+                feedback: true, link: true,
+                fileUrl: true, fileName: true, createdAt: true,
+              }
+            }
+          }
+        }
       }
+    });
 
-      res.json({ success: true, modules });
-    } catch (error) {
-      console.error('❌ getCoursAvecProgression:', error);
-      res.status(500).json({ success: false, message: error.message });
-    }
+    return modules.map((module, moduleIndex) => ({
+      ...module,
+      lessons: module.lessons.map((lecon, leconIndex) => {
+        const submission = lecon.submissions[0] || null;
+        const accessible = this._isAccessible(modules, moduleIndex, leconIndex);
+
+        return {
+          ...lecon,
+          submissions: undefined,
+          submission,
+          accessible,
+          status: submission?.status || (accessible ? 'ACCESSIBLE' : 'LOCKED'),
+        };
+      })
+    }));
   }
 
-  async getAllCours(req, res) {
-    try {
-      const cours = await courseService.getAllCours();
-      res.json({ success: true, cours });
-    } catch (error) {
-      console.error('❌ getAllCours:', error);
-      res.status(500).json({ success: false, message: error.message });
+  _isAccessible(modules, moduleIndex, leconIndex) {
+    if (moduleIndex === 0 && leconIndex === 0) return true;
+
+    let prevLecon;
+    if (leconIndex > 0) {
+      prevLecon = modules[moduleIndex].lessons[leconIndex - 1];
+    } else if (moduleIndex > 0) {
+      const prevModule = modules[moduleIndex - 1];
+      prevLecon = prevModule.lessons[prevModule.lessons.length - 1];
     }
+
+    if (!prevLecon) return true;
+
+    const currentLecon = modules[moduleIndex].lessons[leconIndex];
+    if (!currentLecon.requiresPreviousValidation) return true;
+
+    const prevSubmission = prevLecon.submissions?.[0];
+    return prevSubmission?.status === 'APPROVED';
+  }
+
+  async getAllCours() {
+    return prisma.courseModule.findMany({
+      orderBy: [{ formation: 'asc' }, { ordre: 'asc' }],
+      include: {
+        lessons: {
+          orderBy: { ordre: 'asc' },
+          include: {
+            _count: { select: { submissions: true } }
+          }
+        }
+      }
+    });
   }
 }
 
-export default new CourseController();
+export default new CourseService();
