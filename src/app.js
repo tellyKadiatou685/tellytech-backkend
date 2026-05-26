@@ -16,31 +16,42 @@ dotenv.config();
 
 const app = express();
 
-// ✅ CORS explicite — avant tout le reste
+// ✅ CORS corrigé pour Vercel - sans '*' avec credentials
+const allowedOrigins = [
+  'http://localhost:8081',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'https://telly-tech.com',
+  'https://www.telly-tech.com',
+  'https://tellytech-backkend-rkms.vercel.app',
+  'https://sparkling-glade-3839.pages.dev'
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:8081',
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:4173',
-    'https://telly-tech.com',      // ← ajoutez cette ligne
-    'https://www.telly-tech.com',  
-    'https://tellytech-backkend-rkms.vercel.app',
-      'https://sparkling-glade-3839.pages.dev'
-  ],
+  origin: function(origin, callback) {
+    // Permettre les requêtes sans origin (Postman, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS non autorisé'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 
-// ✅ Preflight pour Express 5
-app.options('/{*path}', cors());
+// ✅ Preflight pour toutes les routes
+app.options('*', cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 8000;
 
+// Route racine
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -50,11 +61,15 @@ app.get("/", (req, res) => {
       inscriptions: "/api/inscriptions",
       paiements:    "/api/paiements",
       messages:     "/api/messages",
-      auth:         "/api/auth"
+      auth:         "/api/auth",
+      courses:      "/api/courses",
+      devoir:       "/api/devoir",
+      emploi:       "/api/emploie"
     }
   });
 });
 
+// Routes API
 app.use("/api/formations",   formationRoutes);
 app.use("/api/paiements",    paiementRoutes);
 app.use("/api/messages",     messageRoutes);
@@ -64,9 +79,9 @@ app.use('/api/submissions',  submissionRoutes);
 app.use('/api/courses',      courseRoutes);
 app.use('/api/progress',     progressRoutes);
 app.use('/api/emploie',      emploiDuTempsRoutes);
-app.use('/api/devoir',      DevoirRoutes );
+app.use('/api/devoir',       DevoirRoutes);
 
-// 404
+// 404 - Route non trouvée
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -75,7 +90,7 @@ app.use((req, res) => {
   });
 });
 
-// Erreurs globales
+// Gestion des erreurs globales
 app.use((err, req, res, next) => {
   console.error("❌ Erreur:", err);
 
