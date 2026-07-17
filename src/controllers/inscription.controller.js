@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import { envoyerEmailAdmin, envoyerEmailValidation, envoyerEmailInscription } from '../services/email.service.js';
 import bcrypt from 'bcryptjs';
+import { calculerDateFinFormation } from '../utils/moisCalendaire.js';
 
 function genererCode() {
   return Math.floor(1000 + Math.random() * 9000).toString();
@@ -164,12 +165,16 @@ export const getInscriptionsValidees = async (req, res) => {
 //  Paiement MENSUEL (autres formations)
 //    → body: { montantInscription, nombreMois, mensualite, cohorte }
 //
+//  🆕 dateDemarrage (optionnel) : si l'étudiant démarre à une date
+//  différente de la validation (ex: rejoint une cohorte déjà en cours,
+//  ou l'admin valide en retard). Si absent → date du jour par défaut.
+//
 //  Dans les deux cas un compte User est créé automatiquement.
 // ========================================
 export const validerInscription = async (req, res) => {
   try {
     const { id } = req.params;
-    const { montantInscription, nombreMois, mensualite, cohorte } = req.body;
+    const { montantInscription, nombreMois, mensualite, cohorte, dateDemarrage } = req.body;
 
     // Champs toujours obligatoires
     if (!montantInscription || !nombreMois || !cohorte) {
@@ -213,10 +218,12 @@ export const validerInscription = async (req, res) => {
     });
     console.log(`✅ Compte User créé pour ${inscription.email}`);
 
-    // ── Calculer la date de fin ───────────────────────────────────────────
-    const dateDebut = new Date();
-    const dateFin   = new Date(dateDebut);
-    dateFin.setMonth(dateFin.getMonth() + parseInt(nombreMois));
+    // ── 🆕 Date de démarrage réelle + date de fin calculée ─────────────────
+    // Par défaut : date du jour (= date de validation admin).
+    // L'admin peut envoyer une dateDemarrage précise si l'étudiant démarre
+    // à un autre moment (ex: rejoint une cohorte déjà en cours).
+    const dateDebut = dateDemarrage ? new Date(dateDemarrage) : new Date();
+    const dateFin   = calculerDateFinFormation(dateDebut, nombreMois);
 
     // ── Mettre à jour l'inscription ───────────────────────────────────────
     const inscriptionValidee = await prisma.inscription.update({
@@ -228,6 +235,7 @@ export const validerInscription = async (req, res) => {
         mensualite:         estPaiementUnique ? null : parseInt(mensualite),
         cohorte:            parseInt(cohorte),
         estActif:           true,
+        dateDemarrage:      dateDebut,
         dateFinFormation:   dateFin
       }
     });
@@ -275,11 +283,12 @@ export const validerInscription = async (req, res) => {
 // ========================================
 // ✅ MODIFIER une inscription
 //    Synchronise aussi le User associé
+//    🆕 Permet aussi de corriger dateDemarrage après coup
 // ========================================
 export const modifierInscription = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nom, prenom, email, telephone, formation, cohorte } = req.body;
+    const { nom, prenom, email, telephone, formation, cohorte, dateDemarrage } = req.body;
 
     const inscription = await prisma.inscription.findUnique({
       where: { id: parseInt(id) }
@@ -300,6 +309,12 @@ export const modifierInscription = async (req, res) => {
       }
     }
 
+    // 🆕 Si dateDemarrage est corrigée, recalculer dateFinFormation en cohérence
+    let nouvelleDateFin;
+    if (dateDemarrage && inscription.nombreMois) {
+      nouvelleDateFin = calculerDateFinFormation(new Date(dateDemarrage), inscription.nombreMois);
+    }
+
     // ── Mettre à jour l'inscription ───────────────────────────────────────
     const inscriptionMaj = await prisma.inscription.update({
       where: { id: parseInt(id) },
@@ -310,6 +325,8 @@ export const modifierInscription = async (req, res) => {
         ...(telephone && { telephone }),
         ...(formation && { formation }),
         ...(cohorte !== undefined && { cohorte: cohorte ? parseInt(cohorte) : null }),
+        ...(dateDemarrage && { dateDemarrage: new Date(dateDemarrage) }),
+        ...(nouvelleDateFin && { dateFinFormation: nouvelleDateFin }),
       }
     });
 
@@ -342,8 +359,6 @@ export const modifierInscription = async (req, res) => {
   }
 };
 
-// ========================================
-// ✅ SUPPRIMER une inscription
 // ========================================
 // ✅ SUPPRIMER une inscription
 //    Synchronise aussi la suppression du User associé

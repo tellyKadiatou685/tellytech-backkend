@@ -52,6 +52,10 @@ model Inscription {
   nombreMois         Int?
   cohorte            Int?
   estActif           Boolean            @default(true)
+  // 🆕 Date réelle de démarrage de l'étudiant (peut différer de la date
+  // officielle de la cohorte si l'étudiant rejoint en retard).
+  // Fixée automatiquement à la validation, modifiable par l'admin.
+  dateDemarrage      DateTime?
   dateFinFormation   DateTime?
   status             Status             @default(PENDING)
   code               String?            @unique
@@ -67,6 +71,11 @@ model Paiement {
   id             Int            @id @default(autoincrement())
   inscriptionId  Int
   mois           Int
+  // 🆕 Mois calendaire réel auquel correspond cette mensualité,
+  // au format "YYYY-MM" (ex: "2026-02"), calculé à partir de
+  // Inscription.dateDemarrage. Permet les stats par mois réel,
+  // toutes cohortes confondues, indépendamment du "mois" relatif.
+  moisCalendaire String?
   montant        Int
   status         StatusPaiement @default(EN_ATTENTE)
   dateValidation DateTime?
@@ -74,6 +83,8 @@ model Paiement {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   inscription    Inscription    @relation(fields: [inscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([moisCalendaire])
 }
 
 model CourseModule {
@@ -104,16 +115,17 @@ model CourseLesson {
   videoPublicId              String?
   pdfUrl                     String?
   pdfPublicId                String?
-  pdfExoUrl                  String?            // ← NOUVEAU : PDF exercice
-  pdfExoPublicId             String?            // ← NOUVEAU : PDF exercice
+  pdfExoUrl                  String?
+  pdfExoPublicId             String?
   consigneExo                String?
   requiresPreviousValidation Boolean            @default(true)
   createdAt                  DateTime           @default(now())
   updatedAt                  DateTime           @updatedAt
   module                     CourseModule       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   submissions                LessonSubmission[]
-   hasEditor   Boolean @default(false)
-  starterCode String?
+  hasEditor                  Boolean            @default(false)
+  starterCode                String?
+
   @@index([moduleId])
   @@index([moduleId, ordre])
 }
@@ -187,18 +199,99 @@ model Evenement {
 model Galerie {
   id          Int       @id @default(autoincrement())
   url         String
-  evenementId Int
-  evenement   Evenement @relation(fields: [evenementId], references: [id])
+  titre       String
+  description String?
+  categorie   String
+  estActif    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  evenementId Int?
+  evenement   Evenement? @relation(fields: [evenementId], references: [id])
+
+  @@index([categorie])
+  @@index([estActif, createdAt])
 }
 
 model Article {
+  id              Int            @id @default(autoincrement())
+  titre           String
+  slug            String         @unique
+  extrait         String?
+  contenu         String
+  imageUrl        String?
+  videoUrl        String?       // vidéo unique (YouTube/Cloudinary), optionnelle
+  categorie       String?
+  auteur          String         @default("TellyTech")
+
+  // SEO / IA
+  metaTitle       String?
+  metaDescription String?
+  motsCles        String[]
+
+  estPublie       Boolean        @default(false)
+  publieAt        DateTime?
+  vues            Int            @default(0)
+  nbLikes         Int            @default(0)
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  medias          ArticleMedia[]
+  commentaires    Commentaire[]
+  likes           Like[]
+
+  @@index([estPublie, publieAt])
+  @@index([categorie])
+}
+
+model ArticleMedia {
   id        Int      @id @default(autoincrement())
-  titre     String
-  slug      String   @unique
-  contenu   String
-  imageUrl  String?
+  articleId Int
+  url       String
+  ordre     Int      @default(0)
+  createdAt DateTime @default(now())
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId])
+}
+
+model Commentaire {
+  id          Int      @id @default(autoincrement())
+  articleId   Int
+  nom         String
+  email       String?
+  contenu     String
+  estApprouve Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId])
+  @@index([estApprouve])
+}
+
+model Like {
+  id          Int      @id @default(autoincrement())
+  articleId   Int
+  identifiant String
+  type        String   @default("utile")
+  createdAt   DateTime @default(now())
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, identifiant, type])
+  @@index([articleId])
+}
+
+model FaqItem {
+  id        Int      @id @default(autoincrement())
+  question  String
+  reponse   String
+  categorie String?
+  ordre     Int      @default(0)
+  estActif  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([categorie])
+  @@index([estActif])
 }
 
 model Service {

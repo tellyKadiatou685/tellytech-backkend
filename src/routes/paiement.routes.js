@@ -12,6 +12,7 @@ import {
   envoyerRappelsPaiements,
   getStatistiquesDetailleesParMois,
   getStatistiquesParMois,
+  getRevenusParMoisCalendaire, // 🆕
   getDetailsEtudiant,
   getFormationsDisponibles,
   getCohortesDisponibles
@@ -40,9 +41,14 @@ router.get('/admin/non-payes', getEtudiantsPaiementsNonPayes);
 router.post('/admin/rappels', envoyerRappelsPaiements);
 
 // Avec filtres ?formation=Web%20Development
-// 📊 Vue par mois avec filtres
+// 📊 Vue par mois avec filtres (mois RELATIF, ex: "Mois 3" de chaque étudiant)
 // GET /api/paiements/admin/stats-mois?formation=Marketing&cohorte=1
 router.get('/admin/stats-mois', getStatistiquesParMois);
+
+// 🆕 📊 Vue par MOIS CALENDAIRE réel (ex: "Février 2026"), toutes cohortes
+// et dates de démarrage confondues. Répond à "combien j'ai reçu en Février 2026 ?"
+// GET /api/paiements/admin/stats-mois-calendaire?formation=Marketing&cohorte=1
+router.get('/admin/stats-mois-calendaire', getRevenusParMoisCalendaire);
 
 // 👤 Détails d'un étudiant spécifique
 // GET /api/paiements/admin/etudiant/123
@@ -56,4 +62,3 @@ router.get('/admin/formations', getFormationsDisponibles);
 router.get('/admin/cohortes', getCohortesDisponibles);
 
 export default router;
-

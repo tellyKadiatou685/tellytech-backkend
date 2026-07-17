@@ -1,5 +1,5 @@
-import dotenv from "dotenv";
-dotenv.config(); // Charger les variables d'environnement en premier
+import { config } from "dotenv";
+config({ override: true });
 
 import app from "./src/app.js"; // Ton app Express
 

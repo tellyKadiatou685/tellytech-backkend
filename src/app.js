@@ -11,6 +11,10 @@ import progressRoutes from "./routes/progress.routes.js";
 import courseRoutes from './routes/course.routes.js';
 import DevoirRoutes from './routes/devoir.routes.js';
 import emploiDuTempsRoutes from './routes/emploiDuTemps.routes.js';
+import articleRoutes from "./routes/article.routes.js";
+import commentaireRoutes from "./routes/commentaire.routes.js";
+import likeRoutes from "./routes/like.routes.js";
+import galerieRoutes from "./routes/galerie.routes.js";
 
 dotenv.config();
 
@@ -79,6 +83,10 @@ app.use('/api/courses',      courseRoutes);
 app.use('/api/progress',     progressRoutes);
 app.use('/api/emploie',      emploiDuTempsRoutes);
 app.use('/api/devoir',       DevoirRoutes);
+app.use("/api", articleRoutes);
+app.use("/api", commentaireRoutes);
+app.use("/api", likeRoutes);
+app.use("/api", galerieRoutes);
 
 // 404 - Route non trouvée
 app.use((req, res) => {

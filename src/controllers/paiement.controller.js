@@ -7,6 +7,11 @@ import {
   envoyerEmailPaiementValide,
   envoyerEmailRappelPaiement
 } from '../services/paiement-email.service.js';
+import {
+  calculerMoisCalendaire,
+  formaterMoisCalendaire,
+  genererMoisFormation
+} from '../utils/moisCalendaire.js';
 
 // ======================================== 
 // 📌 PARTIE ÉTUDIANT 
@@ -48,6 +53,9 @@ export const getDashboardEtudiant = async (req, res) => {
     const paiementsFormates = inscription.paiements.map(p => ({
       id: p.id,
       mois: p.mois,
+      // 🆕 mois calendaire réel + label lisible ("Février 2026")
+      moisCalendaire: p.moisCalendaire,
+      moisLabel: formaterMoisCalendaire(p.moisCalendaire),
       montant: p.montant,
       status: p.status,
       dateValidation: p.dateValidation,
@@ -56,6 +64,12 @@ export const getDashboardEtudiant = async (req, res) => {
         ? `${process.env.API_URL || 'https://tellytech-backkend.vercel.app'}/api/paiements/etudiant/recu/${p.id}` 
         : null
     }));
+
+    // 🆕 Calendrier complet de la formation (mois payés + mois à venir),
+    // utile pour afficher à l'étudiant tout son échéancier avec les vrais noms de mois
+    const calendrierFormation = inscription.dateDemarrage
+      ? genererMoisFormation(inscription.dateDemarrage, inscription.nombreMois)
+      : [];
 
     res.json({
       success: true,
@@ -70,6 +84,7 @@ export const getDashboardEtudiant = async (req, res) => {
         mensualite: inscription.mensualite,
         montantInscription: inscription.montantInscription || 0,
         estActif: inscription.estActif,
+        dateDemarrage: inscription.dateDemarrage,
         dateFinFormation: inscription.dateFinFormation
       },
       statistiques: {
@@ -81,7 +96,8 @@ export const getDashboardEtudiant = async (req, res) => {
         montantPaye,
         montantRestant
       },
-      paiements: paiementsFormates
+      paiements: paiementsFormates,
+      calendrierFormation
     });
 
   } catch (error) {
@@ -125,10 +141,17 @@ export const demanderPaiement = async (req, res) => {
       });
     }
 
+    // 🆕 Calculer le mois calendaire réel de cette mensualité
+    // (null si l'inscription n'a pas encore de dateDemarrage — anciennes données)
+    const moisCalendaire = inscription.dateDemarrage
+      ? calculerMoisCalendaire(inscription.dateDemarrage, parseInt(mois))
+      : null;
+
     const paiement = await prisma.paiement.create({
       data: {
         inscriptionId: inscription.id,
         mois: parseInt(mois),
+        moisCalendaire,
         montant: parseInt(montant),
         status: 'EN_ATTENTE'
       }
@@ -146,7 +169,10 @@ export const demanderPaiement = async (req, res) => {
     res.status(201).json({ 
       success: true, 
       message: 'Demande de paiement enregistrée ! Vous recevrez une confirmation après validation.', 
-      paiement 
+      paiement: {
+        ...paiement,
+        moisLabel: formaterMoisCalendaire(moisCalendaire)
+      }
     });
 
   } catch (error) {
@@ -158,7 +184,7 @@ export const demanderPaiement = async (req, res) => {
   }
 };
 
-// ✅ MODIFIÉ : Téléchargement du reçu en Buffer
+// ✅ Téléchargement du reçu en Buffer
 export const telechargerRecu = async (req, res) => {
   try {
     const { paiementId } = req.params;
@@ -182,7 +208,6 @@ export const telechargerRecu = async (req, res) => {
       });
     }
 
-    // ✅ Générer le PDF en Buffer (pas de fichier sur disque)
     console.log('⚙️ Génération du PDF en mémoire...');
     
     const pdfBuffer = await genererRecuMensuelPDF({
@@ -196,7 +221,6 @@ export const telechargerRecu = async (req, res) => {
       dateValidation: paiement.dateValidation || new Date()
     });
 
-    // ✅ Envoyer le Buffer directement au client
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Recu_Mois${paiement.mois}_TellyTech.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
@@ -248,6 +272,7 @@ export const getPaiementsEnAttente = async (req, res) => {
       formation: p.inscription.formation,
       cohorte: p.inscription.cohorte,
       mois: p.mois,
+      moisLabel: formaterMoisCalendaire(p.moisCalendaire), // 🆕
       montant: p.montant,
       dateDemande: p.createdAt
     }));
@@ -294,6 +319,7 @@ export const getPaiementsValides = async (req, res) => {
       formation: p.inscription.formation,
       cohorte: p.inscription.cohorte,
       mois: p.mois,
+      moisLabel: formaterMoisCalendaire(p.moisCalendaire), // 🆕
       montant: p.montant,
       dateValidation: p.dateValidation
     }));
@@ -348,6 +374,11 @@ export const getEtudiantsPaiementsNonPayes = async (req, res) => {
             }
           }
 
+          // 🆕 Version lisible des mois manquants ("Février 2026", "Mars 2026"...)
+          const moisManquantsLabels = inscription.dateDemarrage
+            ? moisManquants.map(m => formaterMoisCalendaire(calculerMoisCalendaire(inscription.dateDemarrage, m)))
+            : [];
+
           return {
             id: inscription.id,
             etudiant: `${inscription.prenom} ${inscription.nom}`,
@@ -359,6 +390,7 @@ export const getEtudiantsPaiementsNonPayes = async (req, res) => {
             moisPayes,
             moisNonPayes,
             moisManquants,
+            moisManquantsLabels, // 🆕
             dateInscription: inscription.createdAt
           };
         }
@@ -418,19 +450,25 @@ export const envoyerRappelsPaiements = async (req, res) => {
           }
         }
 
+        // 🆕 Utiliser les vrais noms de mois dans l'email si dateDemarrage connue,
+        // sinon fallback sur les numéros de mois (anciennes inscriptions)
+        const moisManquantsAffiches = inscription.dateDemarrage
+          ? moisManquants.map(m => formaterMoisCalendaire(calculerMoisCalendaire(inscription.dateDemarrage, m)))
+          : moisManquants;
+
         try {
           await envoyerEmailRappelPaiement({
             nomComplet: `${inscription.prenom} ${inscription.nom}`,
             email: inscription.email,
             formation: inscription.formation,
-            moisManquants,
+            moisManquants: moisManquantsAffiches,
             montantMensuel: inscription.mensualite
           });
 
           rappelsEnvoyes.push({
             email: inscription.email,
             nom: `${inscription.prenom} ${inscription.nom}`,
-            moisManquants
+            moisManquants: moisManquantsAffiches
           });
         } catch (error) {
           console.error(`❌ Erreur envoi rappel pour ${inscription.email}:`, error);
@@ -458,16 +496,13 @@ export const envoyerRappelsPaiements = async (req, res) => {
   }
 };
 
-// 📊 STATISTIQUES DÉTAILLÉES PAR MOIS - VERSION SIMPLIFIÉE
+// 📊 STATISTIQUES DÉTAILLÉES PAR MOIS - VERSION SIMPLIFIÉE (mois relatif, historique)
 export const getStatistiquesDetailleesParMois = async (req, res) => {
   try {
     const { formation, mois, cohorte } = req.query;
 
     console.log('📊 Filtres reçus:', { formation, mois, cohorte });
 
-    // ========================================
-    // 1️⃣ RÉCUPÉRER LES ÉTUDIANTS ACTIFS
-    // ========================================
     const whereInscription = { 
       status: 'VALIDATED',
       estActif: true
@@ -487,9 +522,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
 
     console.log(`👥 ${inscriptions.length} étudiant(s) actif(s) trouvé(s)`);
 
-    // ========================================
-    // 2️⃣ SI FILTRE PAR MOIS : Stats pour CE mois
-    // ========================================
     if (mois) {
       const moisNum = parseInt(mois);
       console.log(`🔍 Filtrage pour le mois ${moisNum}`);
@@ -499,7 +531,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
       for (const inscription of inscriptions) {
         const formationNom = inscription.formation;
         
-        // Initialiser la formation si nécessaire
         if (!statsParFormation[formationNom]) {
           statsParFormation[formationNom] = {
             formation: formationNom,
@@ -515,13 +546,11 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
 
         statsParFormation[formationNom].etudiantsActifs++;
 
-        // ✅ Est-ce que cet étudiant doit payer ce mois ?
         const doitPayerCeMois = inscription.nombreMois >= moisNum;
         
         if (doitPayerCeMois) {
           statsParFormation[formationNom].etudiantsDoiventPayer++;
           
-          // ✅ A-t-il payé ce mois ?
           const aPaye = inscription.paiements.some(p => p.mois === moisNum);
           
           if (aPaye) {
@@ -531,7 +560,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
             statsParFormation[formationNom].etudiantsNonPaye++;
           }
 
-          // Détails pour debug
           statsParFormation[formationNom].detailsEtudiants.push({
             nom: `${inscription.prenom} ${inscription.nom}`,
             nombreMois: inscription.nombreMois,
@@ -541,7 +569,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
         }
       }
 
-      // Calculer les taux
       for (const formationNom in statsParFormation) {
         const stats = statsParFormation[formationNom];
         stats.tauxPaiement = stats.etudiantsDoiventPayer > 0 
@@ -550,8 +577,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
       }
 
       const statsArray = Object.values(statsParFormation);
-
-      console.log('📈 Résultat:', JSON.stringify(statsArray, null, 2));
 
       return res.json({
         success: true,
@@ -562,9 +587,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
       });
     }
 
-    // ========================================
-    // 3️⃣ SANS FILTRE MOIS : Stats globales
-    // ========================================
     const statsParFormation = {};
 
     for (const inscription of inscriptions) {
@@ -589,7 +611,6 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
       statsParFormation[formationNom].revenus += revenusEtudiant;
     }
 
-    // Calculer mois non payés et taux
     for (const formationNom in statsParFormation) {
       const stats = statsParFormation[formationNom];
       stats.totalMoisNonPayes = stats.totalMoisAttendus - stats.totalMoisPayes;
@@ -618,7 +639,91 @@ export const getStatistiquesDetailleesParMois = async (req, res) => {
   }
 };
 
-// ✅ MODIFIÉ : Validation avec Buffer pour l'email
+// ========================================
+// 🆕📊 STATISTIQUES PAR MOIS CALENDAIRE RÉEL
+//
+// Contrairement à getStatistiquesDetailleesParMois (qui groupe par mois
+// RELATIF, ex: "Mois 3" de chaque étudiant), cet endpoint groupe par mois
+// CALENDAIRE réel (ex: "Février 2026"), toutes cohortes/dates de démarrage
+// confondues. C'est la vraie réponse à "combien j'ai reçu en Février 2026 ?"
+//
+// Query params optionnels : formation, cohorte
+// ========================================
+export const getRevenusParMoisCalendaire = async (req, res) => {
+  try {
+    const { formation, cohorte } = req.query;
+
+    const whereInscription = {
+      status: 'VALIDATED'
+    };
+    if (formation) whereInscription.formation = formation;
+    if (cohorte) whereInscription.cohorte = parseInt(cohorte);
+
+    const paiements = await prisma.paiement.findMany({
+      where: {
+        status: 'VALIDE',
+        moisCalendaire: { not: null },
+        inscription: whereInscription
+      },
+      include: { inscription: true }
+    });
+
+    if (paiements.length === 0) {
+      return res.json({
+        success: true,
+        message: paiements.length === 0
+          ? "Aucun paiement avec mois calendaire trouvé. Pensez à lancer le script de backfill pour les anciennes données."
+          : undefined,
+        statsParMois: []
+      });
+    }
+
+    // Regrouper par moisCalendaire ("2026-02")
+    const groupes = {};
+    for (const p of paiements) {
+      const cle = p.moisCalendaire;
+      if (!groupes[cle]) {
+        groupes[cle] = {
+          moisCalendaire: cle,
+          moisLabel: formaterMoisCalendaire(cle),
+          nombrePaiements: 0,
+          revenus: 0,
+          etudiants: []
+        };
+      }
+      groupes[cle].nombrePaiements++;
+      groupes[cle].revenus += p.montant;
+      groupes[cle].etudiants.push({
+        nom: `${p.inscription.prenom} ${p.inscription.nom}`,
+        email: p.inscription.email,
+        formation: p.inscription.formation,
+        montant: p.montant
+      });
+    }
+
+    // Trier chronologiquement par clé "YYYY-MM"
+    const statsParMois = Object.values(groupes).sort((a, b) =>
+      a.moisCalendaire.localeCompare(b.moisCalendaire)
+    );
+
+    res.json({
+      success: true,
+      filtreFormation: formation || null,
+      filtreCohorte: cohorte ? parseInt(cohorte) : null,
+      statsParMois
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur stats par mois calendaire:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des statistiques par mois calendaire',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Validation avec Buffer pour l'email
 export const validerPaiement = async (req, res) => {
   try {
     const { id } = req.params;
@@ -642,7 +747,6 @@ export const validerPaiement = async (req, res) => {
       });
     }
 
-    // ✅ Générer le PDF en Buffer
     const recuBuffer = await genererRecuMensuelPDF({
       nomComplet: `${paiement.inscription.prenom} ${paiement.inscription.nom}`,
       email: paiement.inscription.email,
@@ -654,17 +758,22 @@ export const validerPaiement = async (req, res) => {
       dateValidation: new Date()
     });
 
-    // ✅ Mettre à jour le paiement (sans recuUrl car on ne stocke plus sur disque)
+    // 🆕 Si le paiement n'a pas encore de moisCalendaire (ancienne donnée créée
+    // avant cette évolution), on le calcule ici au moment de la validation
+    const moisCalendaire = paiement.moisCalendaire
+      || (paiement.inscription.dateDemarrage
+            ? calculerMoisCalendaire(paiement.inscription.dateDemarrage, paiement.mois)
+            : null);
+
     const paiementValide = await prisma.paiement.update({
       where: { id: parseInt(id) },
       data: {
         status: 'VALIDE',
-        dateValidation: new Date()
-        // ❌ On ne stocke plus recuUrl car le PDF n'est jamais sur disque
+        dateValidation: new Date(),
+        moisCalendaire
       }
     });
 
-    // ✅ Envoyer l'email avec le Buffer
     await envoyerEmailPaiementValide({
       nomComplet: `${paiement.inscription.prenom} ${paiement.inscription.nom}`,
       email: paiement.inscription.email,
@@ -673,13 +782,16 @@ export const validerPaiement = async (req, res) => {
       mois: paiement.mois,
       montant: paiement.montant,
       paiementId: paiement.id,
-      recuBuffer // ✅ Passer le Buffer au lieu du path
+      recuBuffer
     });
 
     res.json({ 
       success: true, 
       message: 'Paiement validé avec succès ! Email envoyé à l\'étudiant.', 
-      paiement: paiementValide 
+      paiement: {
+        ...paiementValide,
+        moisLabel: formaterMoisCalendaire(moisCalendaire)
+      }
     });
 
   } catch (error) {
@@ -827,21 +939,19 @@ export const getStatistiquesPaiements = async (req, res) => {
 };
 
 
-// 📊 STATISTIQUES PAR MOIS - VERSION INTELLIGENTE
+// 📊 STATISTIQUES PAR MOIS - VERSION INTELLIGENTE (mois relatif)
 export const getStatistiquesParMois = async (req, res) => {
   try {
     const { formation, cohorte } = req.query;
 
-    // Filtres pour étudiants ACTIFS uniquement
     const whereInscription = { 
       status: 'VALIDATED',
-      estActif: true // ✅ Seulement les actifs
+      estActif: true
     };
     
     if (formation) whereInscription.formation = formation;
     if (cohorte) whereInscription.cohorte = parseInt(cohorte);
 
-    // Récupérer tous les étudiants actifs avec leurs paiements
     const inscriptions = await prisma.inscription.findMany({
       where: whereInscription,
       include: {
@@ -863,12 +973,8 @@ export const getStatistiquesParMois = async (req, res) => {
       });
     }
 
-    // Trouver le nombre max de mois dans cette formation
     const maxMois = Math.max(...inscriptions.map(i => i.nombreMois));
 
-    // ========================================
-    // 📊 STATISTIQUES PAR MOIS
-    // ========================================
     const statsMois = [];
 
     for (let mois = 1; mois <= maxMois; mois++) {
@@ -876,11 +982,9 @@ export const getStatistiquesParMois = async (req, res) => {
       let ontPaye = 0;
 
       for (const inscription of inscriptions) {
-        // Est-ce que cet étudiant doit payer ce mois ?
         if (inscription.nombreMois >= mois) {
           doiventPayer++;
           
-          // A-t-il payé ce mois ?
           const aPaye = inscription.paiements.some(p => p.mois === mois);
           if (aPaye) {
             ontPaye++;
@@ -904,9 +1008,6 @@ export const getStatistiquesParMois = async (req, res) => {
       });
     }
 
-    // ========================================
-    // 👥 LISTE DÉTAILLÉE DES ÉTUDIANTS
-    // ========================================
     const etudiants = inscriptions.map(inscription => {
       const moisPayesListe = inscription.paiements.map(p => p.mois).sort((a, b) => a - b);
       const moisManquants = [];
@@ -933,28 +1034,22 @@ export const getStatistiquesParMois = async (req, res) => {
         nombreMois: inscription.nombreMois,
         mensualite: inscription.mensualite,
         
-        // Progression
         moisPayes: moisPayesListe,
         nombreMoisPayes: moisPayesListe.length,
         moisManquants,
         nombreMoisManquants: moisManquants.length,
         pourcentageProgression: Math.round((moisPayesListe.length / inscription.nombreMois) * 100),
         
-        // Finances
         montantTotal,
         montantPaye,
         montantRestant,
         
-        // Statut
         estAJour: moisManquants.length === 0,
         estEnRetard: moisManquants.length > 0 && moisPayesListe.length > 0,
         aucunPaiement: moisPayesListe.length === 0
       };
     });
 
-    // ========================================
-    // 📈 RÉSUMÉ GLOBAL
-    // ========================================
     const totalEtudiants = inscriptions.length;
     const etudiantsAJour = etudiants.filter(e => e.estAJour).length;
     const etudiantsEnRetard = etudiants.filter(e => e.estEnRetard).length;
@@ -966,7 +1061,6 @@ export const getStatistiquesParMois = async (req, res) => {
       formation: formation || 'Toutes les formations',
       cohorte: cohorte ? parseInt(cohorte) : 'Toutes les cohortes',
       
-      // Résumé
       resume: {
         totalEtudiants,
         etudiantsAJour,
@@ -978,10 +1072,8 @@ export const getStatistiquesParMois = async (req, res) => {
           : '0%'
       },
       
-      // Stats par mois
       statsMois,
       
-      // Liste complète des étudiants
       etudiants
     });
 
@@ -1017,7 +1109,6 @@ export const getDetailsEtudiant = async (req, res) => {
       });
     }
 
-    // Analyser les paiements par mois
     const paiementsParMois = [];
     const moisPayesListe = inscription.paiements
       .filter(p => p.status === 'VALIDE')
@@ -1025,9 +1116,13 @@ export const getDetailsEtudiant = async (req, res) => {
 
     for (let mois = 1; mois <= inscription.nombreMois; mois++) {
       const paiementMois = inscription.paiements.find(p => p.mois === mois);
+      const moisCalendaire = inscription.dateDemarrage
+        ? calculerMoisCalendaire(inscription.dateDemarrage, mois)
+        : null;
       
       paiementsParMois.push({
         mois,
+        moisLabel: formaterMoisCalendaire(moisCalendaire), // 🆕
         statut: paiementMois 
           ? paiementMois.status 
           : 'NON_PAYE',
@@ -1059,6 +1154,7 @@ export const getDetailsEtudiant = async (req, res) => {
         cohorte: inscription.cohorte,
         estActif: inscription.estActif,
         dateInscription: inscription.createdAt,
+        dateDemarrage: inscription.dateDemarrage,
         dateFinFormation: inscription.dateFinFormation
       },
       
@@ -1083,6 +1179,7 @@ export const getDetailsEtudiant = async (req, res) => {
       historiquePaiements: inscription.paiements.map(p => ({
         id: p.id,
         mois: p.mois,
+        moisLabel: formaterMoisCalendaire(p.moisCalendaire), // 🆕
         montant: p.montant,
         status: p.status,
         dateDemande: p.createdAt,
